@@ -1,0 +1,12 @@
+[
+  {
+    "id": "example",
+    "name": "Example outreach",
+    "spreadsheetId": "YOUR_SPREADSHEET_ID",
+    "account": "your-account-alias",
+    "tabs": [
+      "Sheet1"
+    ],
+    "customStatuses": []
+  }
+]

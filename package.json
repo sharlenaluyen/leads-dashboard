@@ -1,0 +1,23 @@
+{
+  "name": "leads-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local follow-up dashboard over Google Sheets, with Gmail last-contact dates and Claude-drafted follow-ups",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "rebuild": "node src/rebuild.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "google-mcp-accounts": "file:../google workspace mcp servers/google-mcp-accounts",
+    "googleapis": "^188.0.0",
+    "multi-gmail-mcp": "file:../google workspace mcp servers/multi-gmail-mcp"
+  }
+}

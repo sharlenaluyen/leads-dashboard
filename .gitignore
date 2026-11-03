@@ -1,0 +1,6 @@
+node_modules/
+data/
+*.log
+config/*.bak
+config/*.tmp
+config/sources.json

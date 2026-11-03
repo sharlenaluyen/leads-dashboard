@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Follow-ups</title>
+  <link rel="stylesheet" href="styles.css">
+  <script>
+    // Apply a saved light/dark choice before the page paints (see app.js).
+    try {
+      const t = localStorage.getItem("theme");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    } catch {}
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <h1>Follow-ups</h1>
+    <div class="sync">
+      <span id="sync-status" class="muted">Not synced yet</span>
+      <button id="theme-btn" class="theme-toggle" type="button"></button>
+      <button id="sync-btn" class="primary">Sync</button>
+    </div>
+  </header>
+
+  <div id="banners"></div>
+
+  <div class="toolbar">
+    <input id="search" type="search" placeholder="Search business or email">
+    <select id="filter-status" aria-label="Status filter"><option value="">All statuses</option></select>
+    <select id="filter-priority" aria-label="Priority filter">
+      <option value="">All priorities</option>
+      <option value="3">3 · Overdue</option><option value="2">2 · Due soon</option><option value="1">1 · Too recent</option><option value="0">0 · No action needed</option>
+      <option value="none">No priority</option>
+    </select>
+    <select id="filter-turn" aria-label="Whose turn">
+      <option value="">Anyone's turn</option>
+      <option value="received">They replied (your turn)</option>
+      <option value="sent">Waiting on them</option>
+      <option value="none">Never emailed</option>
+    </select>
+    <label class="check"><input id="show-closed" type="checkbox"> Show closed</label>
+    <span class="spacer"></span>
+    <button id="history-btn">History</button>
+    <button id="add-source-btn">Add section</button>
+  </div>
+
+  <div class="legend" aria-label="Row colors">
+    <span><i style="background: var(--u3)"></i>3 · Overdue</span>
+    <span><i style="background: var(--u2)"></i>2 · Due soon</span>
+    <span><i style="background: var(--u1)"></i>1 · Too recent</span>
+    <span><i style="background: var(--u0)"></i>0 · No action needed</span>
+    <span><i style="background: var(--turn-text)"></i>They replied: your turn</span>
+  </div>
+
+  <div id="new-contacts"></div>
+  <main id="sections"></main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+
+  <div id="actionbar" class="actionbar" hidden>
+    <span id="selected-count"></span>
+    <button id="clear-selection">Clear</button>
+    <button id="draft-btn" class="primary">Draft follow-ups</button>
+  </div>
+
+  <dialog id="draft-dialog">
+    <form method="dialog" class="dialog-head">
+      <h2>Draft follow-ups</h2>
+      <button class="icon" aria-label="Close">✕</button>
+    </form>
+    <div id="draft-setup">
+      <p class="muted" id="draft-summary"></p>
+      <label class="field">Instructions for Claude (optional)
+        <textarea id="draft-instructions" rows="3" placeholder="e.g. mention we're flexible on dates, keep it to 3 sentences"></textarea>
+      </label>
+      <div class="dialog-actions"><button id="draft-generate" class="primary">Write drafts</button></div>
+    </div>
+    <div id="draft-results"></div>
+  </dialog>
+
+  <dialog id="source-dialog">
+    <form method="dialog" class="dialog-head">
+      <h2 id="source-dialog-title">Add section</h2>
+      <button class="icon" aria-label="Close">✕</button>
+    </form>
+    <div class="source-form">
+      <label class="field">Section name <input id="src-name" placeholder="Personal"></label>
+      <label class="field">Google Sheet link <input id="src-url" placeholder="https://docs.google.com/spreadsheets/d/…"></label>
+      <label class="field">Gmail account to check <select id="src-account"></select></label>
+      <div class="dialog-actions"><button id="src-load">Load tabs</button></div>
+      <fieldset id="src-tabs" hidden>
+        <legend>Tabs to include</legend>
+        <div id="src-tab-list"></div>
+      </fieldset>
+      <div id="src-statuses" hidden>
+        <h3>Custom statuses</h3>
+        <div id="src-status-list" class="chips"></div>
+        <div class="inline"><input id="src-new-status" placeholder="New status"><button id="src-add-status">Add</button></div>
+      </div>
+      <p id="src-error" class="error" hidden></p>
+      <div class="dialog-actions">
+        <button id="src-delete" class="danger" hidden>Remove section</button>
+        <span class="spacer"></span>
+        <button id="src-save" class="primary" disabled>Save</button>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="history-dialog">
+    <form method="dialog" class="dialog-head">
+      <h2>History</h2>
+      <button class="icon" aria-label="Close">✕</button>
+    </form>
+    <p class="muted">Every cell the dashboard has written to your spreadsheets, newest first. Also saved in <code>data/sheet-changes.jsonl</code>. Undo puts the old value back if the cell hasn't changed since. Email columns follow Gmail, so the next sync sets those again.</p>
+    <div id="history-list"></div>
+  </dialog>
+
+  <template id="section-tpl">
+    <section class="source">
+      <header class="source-head" draggable="true" title="Click to open or close · drag to reorder">
+        <button class="grip icon" aria-label="Reorder section (drag, or Alt+↑/↓)">⠿</button>
+        <button class="collapse icon" aria-label="Open or close section">▾</button>
+        <h2 class="source-name"></h2>
+        <span class="source-meta muted"></span>
+        <span class="spacer"></span>
+        <span class="counts"></span>
+        <button class="edit-source">Edit</button>
+      </header>
+      <div class="tabs"></div>
+    </section>
+  </template>
+
+  <template id="tab-tpl">
+    <section class="tab-section">
+      <header class="tab-head" title="Click to open or close">
+        <button class="collapse icon" aria-label="Open or close tab">▾</button>
+        <h3 class="tab-name"></h3>
+        <span class="tab-meta muted"></span>
+        <span class="spacer"></span>
+        <span class="counts"></span>
+      </header>
+      <div class="tab-problems"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="cb"><input type="checkbox" class="select-all" aria-label="Select all"></th>
+              <th>Next</th>
+              <th>Business</th>
+              <th>Last email</th>
+              <th>Last followed up</th>
+              <th>Priority</th>
+              <th>Follow-up status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="empty muted" hidden>No rows match.</p>
+    </section>
+  </template>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>
