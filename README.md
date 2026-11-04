@@ -350,8 +350,13 @@ Restart `npm start` after changing settings.
 ## Google sign-in expiry
 
 While the Google OAuth app is in Testing mode, sign-ins expire every 7 days.
-Sync then shows "Google sign-in for X has expired". Run `./refresh-tokens.sh`
-in google-mcp-accounts and sync again. No restart needed: the dashboard re-reads the new sign-in on the next request.
+Sync then shows "Google sign-in for X has expired". Click **Google sign-ins**
+at the top of the dashboard (it turns red when an account has expired or ends
+within a day), then **Sign in again** next to the account: your browser opens
+Google's sign-in, and the dashboard picks up the new sign-in as soon as you
+finish. No restart needed. Running `./refresh-tokens.sh` in google-mcp-accounts
+does the same from a terminal, and also restarts Claude Desktop, which keeps
+using old sign-ins until it restarts.
 
 ## Development
 

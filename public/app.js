@@ -418,6 +418,77 @@ function renderHistory(entries) {
   );
 }
 
+// --- Google sign-ins ----------------------------------------------------------
+
+function signinStatus(s) {
+  if (s.status === "expired") return el("span", { class: "error" }, "Expired");
+  if (s.status === "soon") return el("span", { class: "error" }, `Ends in about ${Math.max(s.hoursLeft, 1)} h`);
+  if (s.status === "unknown") return el("span", { class: "muted" }, `Couldn't check: ${s.problem}`);
+  const days = s.hoursLeft == null ? null : Math.floor(s.hoursLeft / 24);
+  return el("span", { class: "muted" }, days == null ? "Signed in" : `Signed in · about ${days} day${days === 1 ? "" : "s"} left`);
+}
+
+// Flags the header button when an account needs signing in again.
+function renderSigninsButton(signins) {
+  const btn = $("#signins-btn");
+  const due = signins.filter((s) => s.status === "expired" || s.status === "soon").length;
+  btn.textContent = due ? `Google sign-ins · ${due} to renew` : "Google sign-ins";
+  btn.classList.toggle("alert", due > 0);
+}
+
+async function checkSignins() {
+  const signins = await api("GET", "/api/signins");
+  renderSigninsButton(signins);
+  return signins;
+}
+
+async function loadSignins() {
+  const box = $("#signins-list");
+  try {
+    box.replaceChildren(...renderSignins(await checkSignins()));
+  } catch (err) {
+    box.replaceChildren(el("p", { class: "error" }, err.message));
+  }
+}
+
+function openSignins() {
+  $("#signins-list").replaceChildren(el("p", { class: "muted" }, "Checking each account with Google…"));
+  $("#signins-dialog").showModal();
+  loadSignins();
+}
+
+function renderSignins(signins) {
+  if (!signins.length) return [el("p", { class: "muted" }, "No Google accounts are connected. Run setup.sh in google-mcp-accounts to connect one.")];
+  return signins.map((s) => {
+    const note = el("div", { class: "sub" });
+    const due = s.status === "expired" || s.status === "soon";
+    const btn = el("button", { class: due ? "primary" : "" }, "Sign in again");
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      btn.replaceChildren(el("span", { class: "spinner" }), " Waiting for browser");
+      note.replaceChildren(`Finish signing in as ${s.email} in the browser tab that just opened.`);
+      try {
+        const r = await api("POST", `/api/signins/${encodeURIComponent(s.alias)}/refresh`);
+        toast(`Signed in as ${r.email}`, {
+          detail: r.switchedFrom ? `"${r.alias}" was ${r.switchedFrom}; it now uses ${r.email}.` : "The next sync uses the new sign-in.",
+          kind: r.switchedFrom ? "error" : "done",
+        });
+        await loadSignins();
+      } catch (err) {
+        note.replaceChildren(el("span", { class: "error" }, err.message));
+        btn.disabled = false;
+        btn.textContent = "Sign in again";
+      }
+    });
+    return el(
+      "div",
+      { class: "signin" },
+      el("div", { class: "signin-who" }, el("strong", {}, s.alias), ` ${s.email}`, el("div", { class: "sub" }, signinStatus(s)), note),
+      btn
+    );
+  });
+}
+
 function renderCounts(box, leads) {
   const open = leads.filter((l) => !isClosed(l.followUpStatus));
   box.append(el("span", { class: "pill" }, `${open.length} open`));
@@ -865,6 +936,7 @@ $("#draft-btn").addEventListener("click", openDraftDialog);
 $("#draft-generate").addEventListener("click", generate);
 $("#add-source-btn").addEventListener("click", () => openSourceDialog());
 $("#history-btn").addEventListener("click", openHistory);
+$("#signins-btn").addEventListener("click", openSignins);
 $("#src-load").addEventListener("click", loadTabs);
 $("#src-save").addEventListener("click", saveSource);
 $("#src-delete").addEventListener("click", deleteSource);
@@ -887,3 +959,6 @@ $("#draft-dialog").addEventListener("close", () => load());
 setInterval(() => state && renderSyncStatus(), 30_000);
 
 load().catch((err) => showBanner(err.message, true));
+checkSignins().catch(() => {
+  /* the dialog shows the reason when opened */
+});

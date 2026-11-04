@@ -11,6 +11,7 @@ import { setLeadField } from "./edits.js";
 import { generateDrafts, saveDraft } from "./drafts.js";
 import { readChanges, undoChange } from "./changes.js";
 import { addContact, dismissContact, listNewContacts } from "./contacts.js";
+import { checkSignins, refreshSignin } from "./signins.js";
 
 const settings = loadSettings();
 const app = express();
@@ -216,6 +217,13 @@ app.post("/api/contacts/dismiss", wrap((req) => dismissContact(String(req.body.a
 app.get("/api/changes", wrap((req) => readChanges({ limit: Math.min(Number(req.query.limit) || 300, 2000) })));
 
 app.post("/api/changes/:id/undo", wrap((req) => undoChange(req.params.id)));
+
+// --- Google sign-ins ------------------------------------------------------
+
+app.get("/api/signins", wrap(() => checkSignins()));
+
+// Waits while you sign in in the browser (up to 5 minutes).
+app.post("/api/signins/:alias/refresh", wrap((req) => refreshSignin(req.params.alias)));
 
 // --- Drafts -------------------------------------------------------------
 

@@ -16,7 +16,8 @@ export const audit = createAuditLogger("leads-dashboard");
 const clientCache = new Map();
 
 // Cached per account *and* refresh token: accounts.json is re-read on every
-// call, so after ./refresh-tokens.sh the next request uses the new sign-in
+// call, so after a sign-in (the dashboard's Google sign-ins button, or
+// ./refresh-tokens.sh) the next request uses the new sign-in
 // without restarting the dashboard.
 function clientFor(product, alias, build) {
   const info = getAccountInfo(alias);
@@ -53,7 +54,7 @@ export class CallCounter {
 export function explainGoogleError(err, alias) {
   const msg = String(err?.response?.data?.error || err?.message || err);
   if (/invalid_grant/i.test(msg)) {
-    return `Google sign-in for "${alias}" has expired. Run ./refresh-tokens.sh in google-mcp-accounts (or node auth.js ${alias}), then sync again.`;
+    return `Google sign-in for "${alias}" has expired. Click "Google sign-ins" at the top of the dashboard to sign in again, then sync again.`;
   }
   return err?.response?.data?.error?.message || err?.message || String(err);
 }

@@ -425,6 +425,12 @@ legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
 .chip button { border: none; background: none; padding: 0 4px; }
 .inline { display: flex; gap: 6px; }
 
+button.alert { border-color: var(--danger); color: var(--danger); font-weight: 600; }
+.signin { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.signin-who { flex: 1; min-width: 0; }
+.signin-who .sub { font-size: 12px; overflow-wrap: anywhere; }
+.signin .error { font-size: 13px; }
+
 .draft-card {
   border: 1px solid var(--border);
   border-radius: var(--radius);

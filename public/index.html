@@ -19,6 +19,7 @@
     <div class="sync">
       <span id="sync-status" class="muted">Not synced yet</span>
       <button id="theme-btn" class="theme-toggle" type="button"></button>
+      <button id="signins-btn" type="button">Google sign-ins</button>
       <button id="sync-btn" class="primary">Sync</button>
     </div>
   </header>
@@ -114,6 +115,15 @@
     </form>
     <p class="muted">Every cell the dashboard has written to your spreadsheets, newest first. Also saved in <code>data/sheet-changes.jsonl</code>. Undo puts the old value back if the cell hasn't changed since. Email columns follow Gmail, so the next sync sets those again.</p>
     <div id="history-list"></div>
+  </dialog>
+
+  <dialog id="signins-dialog">
+    <form method="dialog" class="dialog-head">
+      <h2>Google sign-ins</h2>
+      <button class="icon" aria-label="Close">✕</button>
+    </form>
+    <p class="muted">While the Google app is in Testing mode, each sign-in lasts 7 days. <strong>Sign in again</strong> opens Google in your browser: pick the same account, click <strong>Continue</strong> on "Google hasn't verified this app", and leave every permission ticked. Claude Desktop keeps using the old sign-in until you quit and reopen it.</p>
+    <div id="signins-list"></div>
   </dialog>
 
   <template id="section-tpl">
