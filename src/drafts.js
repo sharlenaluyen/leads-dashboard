@@ -82,7 +82,7 @@ export function saveDraft(leadId, draft) {
 
 async function saveDraftNow(leadId, { subject, body }) {
   if (!loadSettings().createDrafts) {
-    throw new Error("Creating Gmail drafts is turned off (settings.json: createDrafts).");
+    throw new Error("Saving Gmail drafts is turned off (Settings → Save Gmail drafts).");
   }
   if (!body?.trim()) throw new Error("The draft is empty");
   const lead = getLead(leadId);

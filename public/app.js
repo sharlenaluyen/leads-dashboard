@@ -167,6 +167,14 @@ function showBanner(message, isError) {
   renderBanners();
 }
 
+// A warning banner with a close button. Dismissing only hides it until the
+// next render, so it shows again after a reload or sync.
+function dismissibleBanner(text) {
+  const node = el("div", { class: "banner dismissible" }, el("span", {}, text));
+  node.append(el("button", { class: "banner-close", type: "button", "aria-label": "Dismiss", title: "Dismiss", onclick: () => node.remove() }, "×"));
+  return node;
+}
+
 function renderBanners() {
   const box = $("#banners");
   box.replaceChildren();
@@ -175,8 +183,8 @@ function renderBanners() {
   }
   const s = state?.settings;
   if (s && (!s.writeBack || !s.createDrafts)) {
-    const off = [!s.writeBack && "writing to spreadsheets", !s.createDrafts && "creating Gmail drafts"].filter(Boolean);
-    box.append(el("div", { class: "banner" }, `Turned off in config/settings.json: ${off.join(" and ")}. The dashboard is read-only for those until they're switched on.`));
+    const off = [!s.writeBack && "writing to spreadsheets", !s.createDrafts && "saving Gmail drafts"].filter(Boolean);
+    box.append(dismissibleBanner(`Turned off: ${off.join(" and ")}. The dashboard is read-only for those until you switch them on in Settings.`));
   }
   const last = state?.lastSync;
   if (last?.errors?.length) {
@@ -311,6 +319,7 @@ function renderNewContacts() {
 
 function renderContactRow(c) {
   const writable = state.settings.writeBack;
+  const inbox = state.accounts.find((a) => a.alias === c.account)?.email || c.account;
   const name = el("input", { value: c.name || c.email.split("@")[1], "aria-label": `Business name for ${c.email}` });
   const target = el(
     "select",
@@ -319,7 +328,7 @@ function renderContactRow(c) {
       .filter((s) => s.account === c.account)
       .flatMap((s) => s.tabs.map((t) => el("option", { value: JSON.stringify([s.id, t]) }, `${s.name} · ${t}`)))
   );
-  const add = el("button", { class: "primary", disabled: !writable || !target.options.length, title: writable ? undefined : "Writing to spreadsheets is turned off in settings.json" }, "Add");
+  const add = el("button", { class: "primary", disabled: !writable || !target.options.length, title: writable ? undefined : "Writing to spreadsheets is turned off in Settings" }, "Add");
   const dismiss = el("button", { title: "Hide this person from the list" }, "Dismiss");
   add.addEventListener("click", async () => {
     const [sourceId, tab] = JSON.parse(target.value);
@@ -343,7 +352,7 @@ function renderContactRow(c) {
   return el(
     "tr",
     {},
-    el("td", {}, name, el("div", { class: "sub" }, `${c.email} · ${c.count} email${c.count === 1 ? "" : "s"}`)),
+    el("td", {}, name, el("div", { class: "sub" }, `${c.email} · ${c.count} email${c.count === 1 ? "" : "s"} · in ${inbox}'s inbox`)),
     el("td", { class: "when" }, fmtDate(c.lastAt), el("span", { class: `dir ${c.lastDir}` }, c.lastDir === "received" ? "they emailed" : "you sent")),
     el("td", {}, target),
     el("td", { class: "row-actions" }, add, dismiss)
@@ -489,6 +498,58 @@ function renderSignins(signins) {
   });
 }
 
+// --- Settings -----------------------------------------------------------------
+
+const settingInputs = () => [...$("#settings-dialog").querySelectorAll("[data-setting]")];
+
+function settingValue(input) {
+  return input.type === "checkbox" ? input.checked : input.value;
+}
+
+function renderSettings() {
+  const s = state.settings;
+  for (const input of settingInputs()) {
+    if (input.type === "checkbox") input.checked = s[input.dataset.setting];
+    else input.value = s[input.dataset.setting] ?? "";
+  }
+  $("#port-note").textContent = s.port === s.runningPort
+    ? "A new port applies after you restart the dashboard."
+    : `Running on ${s.runningPort}; restart the dashboard to move to ${s.port}.`;
+}
+
+function settingsError(message) {
+  const node = $("#settings-error");
+  node.textContent = message;
+  node.hidden = !message;
+}
+
+function openSettings() {
+  settingsError("");
+  renderSettings();
+  $("#settings-dialog").showModal();
+}
+
+// Each control saves on its own as soon as it changes.
+async function saveSetting(input) {
+  const key = input.dataset.setting;
+  settingsError("");
+  input.disabled = true;
+  input.classList.add("saving");
+  try {
+    state.settings = await api("PATCH", "/api/settings", { [key]: settingValue(input) });
+    if (key === "writeBack" || key === "createDrafts") {
+      toast(`${input.closest(".setting").querySelector("strong").textContent}: ${input.checked ? "on" : "off"}`, { kind: "done" });
+    }
+  } catch (err) {
+    settingsError(err.message);
+  } finally {
+    input.disabled = false;
+    input.classList.remove("saving");
+  }
+  renderSettings();
+  render();
+}
+
 function renderCounts(box, leads) {
   const open = leads.filter((l) => !isClosed(l.followUpStatus));
   box.append(el("span", { class: "pill" }, `${open.length} open`));
@@ -555,7 +616,7 @@ function renderTab(source, tab, f) {
       : " Rename the tab back in Sheets, or click Edit to pick its new name, then sync.";
     problems.append(el("div", { class: "banner" }, `Skipped. ${ts.problem}${/[.!?]$/.test(ts.problem || "") ? "" : "."}${fix}`));
   }
-  else if (ts?.problem) problems.append(el("div", { class: "banner" }, `${ts.problem}.`));
+  else if (ts?.problem) problems.append(dismissibleBanner(`${ts.problem}.`));
 
   const leads = all
     .filter((l) => (f.status === "__none" ? !l.followUpStatus && matches(l, { ...f, status: "" }) : matches(l, f)))
@@ -640,7 +701,7 @@ function ageClass(lead) {
 
 function renderRow(source, lead) {
   const writable = state.settings.writeBack;
-  const offTitle = writable ? undefined : "Writing to spreadsheets is turned off in settings.json";
+  const offTitle = writable ? undefined : "Writing to spreadsheets is turned off in Settings";
 
   const lastCell = lead.lastEmailAt
     ? el(
@@ -768,7 +829,7 @@ function renderDraftList(drafts) {
     const body = el("textarea", { "aria-label": "Body" });
     body.value = d.body;
     const status = el("span", { class: "muted" });
-    const save = el("button", { class: "primary", disabled: !canSave || Boolean(d.error), title: canSave ? undefined : "Creating Gmail drafts is turned off in settings.json" }, d.replacesDraft ? "Replace Gmail draft" : "Save to Gmail drafts");
+    const save = el("button", { class: "primary", disabled: !canSave || Boolean(d.error), title: canSave ? undefined : "Saving Gmail drafts is turned off in Settings" }, d.replacesDraft ? "Replace Gmail draft" : "Save to Gmail drafts");
     const card = el(
       "article",
       { class: "draft-card" },
@@ -937,6 +998,8 @@ $("#draft-generate").addEventListener("click", generate);
 $("#add-source-btn").addEventListener("click", () => openSourceDialog());
 $("#history-btn").addEventListener("click", openHistory);
 $("#signins-btn").addEventListener("click", openSignins);
+$("#settings-btn").addEventListener("click", openSettings);
+for (const input of settingInputs()) input.addEventListener("change", () => saveSetting(input));
 $("#src-load").addEventListener("click", loadTabs);
 $("#src-save").addEventListener("click", saveSource);
 $("#src-delete").addEventListener("click", deleteSource);

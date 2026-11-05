@@ -20,6 +20,7 @@
       <span id="sync-status" class="muted">Not synced yet</span>
       <button id="theme-btn" class="theme-toggle" type="button"></button>
       <button id="signins-btn" type="button">Google sign-ins</button>
+      <button id="settings-btn" type="button">Settings</button>
       <button id="sync-btn" class="primary">Sync</button>
     </div>
   </header>
@@ -122,8 +123,51 @@
       <h2>Google sign-ins</h2>
       <button class="icon" aria-label="Close">✕</button>
     </form>
-    <p class="muted">While the Google app is in Testing mode, each sign-in lasts 7 days. <strong>Sign in again</strong> opens Google in your browser: pick the same account, click <strong>Continue</strong> on "Google hasn't verified this app", and leave every permission ticked. Claude Desktop keeps using the old sign-in until you quit and reopen it.</p>
+    <p class="muted">While the Google app is in Testing mode, each sign-in lasts 7 days. <strong>Sign in again</strong> opens Google in your browser: the same account is already picked (any other is refused, so a wrong click changes nothing); click <strong>Continue</strong> on "Google hasn't verified this app", and leave every permission ticked. Claude Desktop keeps using the old sign-in until you quit and reopen it.</p>
     <div id="signins-list"></div>
+  </dialog>
+
+  <dialog id="settings-dialog">
+    <form method="dialog" class="dialog-head">
+      <h2>Settings</h2>
+      <button class="icon" aria-label="Close">✕</button>
+    </form>
+    <p class="muted">Saved to <code>config/settings.json</code> as soon as you change them, and used from the next action on. A change waits for a running sync to finish.</p>
+    <div class="settings">
+      <h3>What the dashboard may change</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Write to spreadsheets</strong><span class="sub">Dates, priority, status, draft id and added rows. Off: sync still runs and reports how many cell updates are held.</span></span>
+        <input type="checkbox" class="switch" data-setting="writeBack">
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Save Gmail drafts</strong><span class="sub">Lets you save Claude's drafts to Gmail. Nothing is ever sent.</span></span>
+        <input type="checkbox" class="switch" data-setting="createDrafts">
+      </label>
+
+      <h3>Drafting</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Run Claude with</strong><span class="sub">Claude Code uses your plan; the API needs the SDK installed and ANTHROPIC_API_KEY.</span></span>
+        <select data-setting="drafter">
+          <option value="claude-code">Claude Code</option>
+          <option value="api">Anthropic API</option>
+        </select>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Model</strong><span class="sub">Leave blank for the default.</span></span>
+        <input data-setting="drafterModel" placeholder="Default" spellcheck="false">
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Leads per Claude call</strong><span class="sub">Lower this if drafting times out.</span></span>
+        <input type="number" data-setting="draftBatchSize" min="1" max="40" step="1">
+      </label>
+
+      <h3>Server</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Port</strong><span class="sub" id="port-note"></span></span>
+        <input type="number" data-setting="port" min="1024" max="65535" step="1">
+      </label>
+      <p id="settings-error" class="error" hidden></p>
+    </div>
   </dialog>
 
   <template id="section-tpl">

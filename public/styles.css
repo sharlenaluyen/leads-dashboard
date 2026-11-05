@@ -181,6 +181,24 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 }
 .banner.error { background: var(--danger-bg); color: var(--danger); }
 .banner ul { margin: 4px 0 0; padding-left: 18px; }
+.banner.dismissible { display: flex; align-items: flex-start; gap: 8px; }
+.banner.dismissible > span { flex: 1; }
+.banner-close {
+  flex: none;
+  margin: -4px -6px -4px 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.7;
+}
+.banner-close:hover { opacity: 1; background: color-mix(in srgb, currentColor 12%, transparent); }
 
 .toolbar {
   display: flex;
@@ -430,6 +448,42 @@ button.alert { border-color: var(--danger); color: var(--danger); font-weight: 6
 .signin-who { flex: 1; min-width: 0; }
 .signin-who .sub { font-size: 12px; overflow-wrap: anywhere; }
 .signin .error { font-size: 13px; }
+
+.settings h3 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 18px 0 4px; }
+.setting { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); cursor: pointer; }
+.setting-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.setting select, .setting input:not(.switch) { width: 180px; flex: none; }
+.switch {
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 40px;
+  height: 22px;
+  margin: 0;
+  border-radius: 999px;
+  background: var(--border);
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: transform 0.15s;
+}
+.switch:checked { background: var(--accent); }
+.switch:checked::after { transform: translateX(18px); }
+.switch:disabled { opacity: 0.6; cursor: wait; }
+@media (max-width: 640px) {
+  .setting { flex-wrap: wrap; }
+  .setting select, .setting input:not(.switch) { width: 100%; }
+}
 
 .draft-card {
   border: 1px solid var(--border);

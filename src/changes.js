@@ -104,7 +104,7 @@ export function undoChange(id) {
 }
 
 async function undoChangeNow(id) {
-  if (!loadSettings().writeBack) throw new Error("Writing to spreadsheets is turned off (settings.json: writeBack).");
+  if (!loadSettings().writeBack) throw new Error("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
   const all = readAll();
   const entry = all.find((e) => e.id === id && !e.failedOf);
   if (!entry) throw new Error("That change isn't in the log.");

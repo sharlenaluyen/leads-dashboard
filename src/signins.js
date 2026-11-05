@@ -55,7 +55,8 @@ export async function checkSignins() {
 let pending = null;
 
 // Opens Google sign-in for one account in the browser and resolves once it's
-// done. Keeps the account's drive.readonly access if it had it.
+// done. Keeps the account's drive.readonly access if it had it, and only
+// accepts the same Google account (auth.js --expect refuses any other).
 export async function refreshSignin(alias) {
   const acct = loadAccounts()[alias];
   if (!acct) throw new Error(`No connected Google account called "${alias}"`);
@@ -65,7 +66,7 @@ export async function refreshSignin(alias) {
     await pending.done;
   }
 
-  const args = ["auth.js", alias, ...((acct.scopes || []).includes(DRIVE_READONLY_SCOPE) ? ["--with-drive-readonly"] : [])];
+  const args = ["auth.js", alias, "--expect", acct.email, ...((acct.scopes || []).includes(DRIVE_READONLY_SCOPE) ? ["--with-drive-readonly"] : [])];
   const child = spawn(process.execPath, args, { cwd: ACCOUNTS_DIR, stdio: ["ignore", "pipe", "pipe"] });
   const run = { child, cancelled: false, timedOut: false };
   let output = "";
@@ -97,7 +98,7 @@ export async function refreshSignin(alias) {
   return {
     alias,
     email: after,
-    // Signing in as a different Google account takes the alias over.
+    // Only possible with an auth.js older than --expect, which ignores it.
     switchedFrom: after && after !== acct.email ? acct.email : null,
   };
 }

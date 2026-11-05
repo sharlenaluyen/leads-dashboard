@@ -2,7 +2,8 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { BUILT_IN_STATUSES, PRIORITY_LABELS, ROOT, SERVER_PID_PATH, getSource, loadSettings, loadSources, reorderSources, saveSources, statusesFor, updateSource } from "./config.js";
+import { BUILT_IN_STATUSES, PRIORITY_LABELS, ROOT, SERVER_PID_PATH, getSource, loadSettings, loadSources, reorderSources, saveSettings, saveSources, statusesFor, updateSource } from "./config.js";
+import { withSheetLock } from "./lock.js";
 import { getDb } from "./db.js";
 import { CallCounter, explainGoogleError, getAccountInfo, getConnectedAliases, sheetsClientFor } from "./google.js";
 import { listTabs, parseSheetDate, spreadsheetIdFrom } from "./sheets.js";
@@ -82,9 +83,30 @@ app.get(
       accounts: getConnectedAliases().map((a) => ({ alias: a, email: getAccountInfo(a).email })),
       newContacts: listNewContacts(),
       lastSync: last ? { at: last.finished_at, ok: Boolean(last.ok), apiCalls: last.api_calls, ...JSON.parse(last.summary || "{}") } : null,
-      settings: { writeBack: Boolean(current.writeBack), createDrafts: Boolean(current.createDrafts), drafter: current.drafter },
+      settings: settingsView(current),
     };
   })
+);
+
+// --- Settings -----------------------------------------------------------
+
+function settingsView(s) {
+  return {
+    writeBack: Boolean(s.writeBack),
+    createDrafts: Boolean(s.createDrafts),
+    drafter: s.drafter,
+    drafterModel: s.drafterModel || "",
+    draftBatchSize: s.draftBatchSize,
+    port: s.port,
+    // The port this server is listening on; a new one applies after a restart.
+    runningPort: settings.port,
+  };
+}
+
+// Waits for a running sync, so writeBack can't flip partway through one.
+app.patch(
+  "/api/settings",
+  wrap((req) => withSheetLock(() => settingsView(saveSettings(req.body))))
 );
 
 app.post("/api/sync", wrap(() => runSync()));

@@ -43,7 +43,7 @@ export async function setLeadFieldNow(leadId, field, rawValue) {
   const spec = EDITABLE[field];
   if (!spec) throw new Error(`"${field}" isn't editable`);
   if (!loadSettings().writeBack) {
-    throw new Error("Writing to spreadsheets is turned off (settings.json: writeBack).");
+    throw new Error("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
   }
   const db = getDb();
   const lead = db.prepare("SELECT * FROM leads WHERE id = ?").get(leadId);

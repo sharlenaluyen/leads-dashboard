@@ -101,6 +101,51 @@ export function loadSettings() {
   return { ...DEFAULT_SETTINGS, ...readJson(SETTINGS_PATH, {}) };
 }
 
+export const DRAFTERS = ["claude-code", "api"];
+
+// Checks each setting the dashboard can change, returning the cleaned value.
+const SETTING_RULES = {
+  writeBack: (v) => {
+    if (typeof v !== "boolean") throw new Error("writeBack must be on or off");
+    return v;
+  },
+  createDrafts: (v) => {
+    if (typeof v !== "boolean") throw new Error("createDrafts must be on or off");
+    return v;
+  },
+  drafter: (v) => {
+    if (!DRAFTERS.includes(v)) throw new Error(`drafter must be one of: ${DRAFTERS.join(", ")}`);
+    return v;
+  },
+  drafterModel: (v) => {
+    const model = String(v ?? "").trim();
+    if (model.length > 100 || /\s/.test(model)) throw new Error("That doesn't look like a model name");
+    return model || null;
+  },
+  draftBatchSize: (v) => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 1 || n > 40) throw new Error("Leads per Claude call must be a whole number from 1 to 40");
+    return n;
+  },
+  port: (v) => {
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 1024 || n > 65535) throw new Error("Port must be a whole number from 1024 to 65535");
+    return n;
+  },
+};
+
+// Applies `change` on top of what's in the file now (not the defaults), so
+// keys you never set stay unset.
+export function saveSettings(change) {
+  const clean = {};
+  for (const [key, value] of Object.entries(change || {})) {
+    if (!SETTING_RULES[key]) throw new Error(`"${key}" isn't a setting the dashboard can change`);
+    clean[key] = SETTING_RULES[key](value);
+  }
+  writeJsonAtomic(SETTINGS_PATH, { ...readJson(SETTINGS_PATH, {}), ...clean });
+  return loadSettings();
+}
+
 // Sources are configuration, not data, so they live in a JSON file rather
 // than SQLite: deleting the database (a rebuildable cache) never loses them.
 // Shape: [{ id, name, spreadsheetId, account, tabs: [title], customStatuses: [] }]

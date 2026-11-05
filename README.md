@@ -324,14 +324,15 @@ saving. Emails from leads are also wrapped as untrusted content in the prompt.
 
 Right now, the cheapest plan for an individual charges via API keys but doesn't charge for Claude Code, so the system currently runs Claude through Claude Code. The ideal is to swap this out for an API key in the future.
 
-In `config/settings.json`, set `"drafter": "api"`, then:
+In **Settings**, set **Run Claude with** to Anthropic API (or set
+`"drafter": "api"` in `config/settings.json`), then:
 
 ```bash
 npm install @anthropic-ai/sdk
 export ANTHROPIC_API_KEY=...   # or `ant auth login`
 ```
 
-It defaults to `claude-opus-5-5`; set `"drafterModel"` to change it. The API
+It defaults to `claude-opus-5-5`; set **Model** (`"drafterModel"`) to change it. The API
 call has server-side refusal fallback turned on.
 
 ## Settings (`config/settings.json`)
@@ -345,7 +346,11 @@ call has server-side refusal fallback turned on.
 | `drafterModel` | unset | Model for the drafter |
 | `draftBatchSize` | `8` | Leads per Claude call |
 
-Restart `npm start` after changing settings.
+Change these from the **Settings** button in the dashboard, or by editing the
+file. The dashboard saves a change straight to the file, waits for a running
+sync to finish first, and keeps the previous version as `settings.json.bak`.
+Every setting is used from the next action on with no restart, except `port`,
+which applies the next time you start the dashboard.
 
 ## Google sign-in expiry
 

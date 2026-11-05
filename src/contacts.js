@@ -35,7 +35,7 @@ export async function addContact(input) {
 }
 
 async function writeContactRow({ email, sourceId, tab, businessName }) {
-  if (!loadSettings().writeBack) throw new Error("Writing to spreadsheets is turned off (settings.json: writeBack).");
+  if (!loadSettings().writeBack) throw new Error("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
   const address = String(email || "").trim().toLowerCase();
   if (!isEmail(address)) throw new Error("That isn't a valid email address.");
   const source = getSource(sourceId);
