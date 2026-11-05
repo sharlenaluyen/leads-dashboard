@@ -153,8 +153,14 @@
         </select>
       </label>
       <label class="setting">
-        <span class="setting-text"><strong>Model</strong><span class="sub">Leave blank for the default.</span></span>
-        <input data-setting="drafterModel" placeholder="Default" spellcheck="false">
+        <span class="setting-text"><strong>Model</strong><span class="sub">Default uses your Claude Code default, or Opus 5.5 on the API.</span></span>
+        <select data-setting="drafterModel">
+          <option value="">Default</option>
+          <option value="claude-opus-5-5">Opus 5.5</option>
+          <option value="claude-sonnet-5-5">Sonnet 5.5</option>
+          <option value="claude-haiku-5-5">Haiku 5.5</option>
+          <option value="claude-fable-5-1">Fable 5.1</option>
+        </select>
       </label>
       <label class="setting">
         <span class="setting-text"><strong>Leads per Claude call</strong><span class="sub">Lower this if drafting times out.</span></span>

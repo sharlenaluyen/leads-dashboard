@@ -509,8 +509,15 @@ function settingValue(input) {
 function renderSettings() {
   const s = state.settings;
   for (const input of settingInputs()) {
+    const value = s[input.dataset.setting] ?? "";
     if (input.type === "checkbox") input.checked = s[input.dataset.setting];
-    else input.value = s[input.dataset.setting] ?? "";
+    else {
+      // Keep a value set by hand in settings.json visible even when it isn't one of the options.
+      if (input.tagName === "SELECT" && ![...input.options].some((o) => o.value === String(value))) {
+        input.append(el("option", { value }, value));
+      }
+      input.value = value;
+    }
   }
   $("#port-note").textContent = s.port === s.runningPort
     ? "A new port applies after you restart the dashboard."

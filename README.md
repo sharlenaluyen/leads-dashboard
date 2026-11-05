@@ -332,7 +332,7 @@ npm install @anthropic-ai/sdk
 export ANTHROPIC_API_KEY=...   # or `ant auth login`
 ```
 
-It defaults to `claude-opus-5-5`; set **Model** (`"drafterModel"`) to change it. The API
+It defaults to `claude-opus-5-5`; pick a different **Model** in Settings (`"drafterModel"`) to change it. The API
 call has server-side refusal fallback turned on.
 
 ## Settings (`config/settings.json`)
