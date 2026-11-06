@@ -313,14 +313,27 @@ td select.saving { opacity: 0.6; }
 #new-contacts { padding: 8px 24px 0; }
 #new-contacts:empty { display: none; }
 .new-contacts .source-head { background: var(--turn-bg); }
-.starred .source-head { background: var(--u2-bg); }
-.starred .source-name { color: var(--warn-text); }
+#starred { padding: 8px 24px 0; }
+#starred:empty { display: none; }
+/* Starred uses the same header color as every section unless you pick one
+   in Settings (starredColor). Each pairs existing theme tokens, so it
+   follows light and dark mode. */
+.starred.c-amber .source-head { background: var(--u2-bg); }
+.starred.c-amber .source-name { color: var(--warn-text); }
+.starred.c-green .source-head { background: var(--turn-bg); }
+.starred.c-green .source-name { color: var(--turn-text); }
+.starred.c-rose .source-head { background: var(--danger-bg); }
+.starred.c-rose .source-name { color: var(--danger); }
+.starred.c-slate .source-head { background: var(--surface-2); }
+.starred.c-slate .source-name { color: var(--text); }
 .starred .tab-section.flat > .tab-head { display: none; }
 .biz-line { display: flex; align-items: baseline; gap: 2px; }
 button.star { border: none; background: none; padding: 0 4px 0 0; font-size: 16px; line-height: 1; color: var(--muted); cursor: pointer; }
 button.star:hover { color: var(--u2); }
 button.star.on { color: var(--u2); }
-.where { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-right: 6px; white-space: nowrap; }
+td.where-cell { white-space: nowrap; }
+.where { display: inline-flex; flex-direction: column; gap: 1px; background: var(--accent-soft); color: var(--accent); border-radius: 6px; padding: 3px 8px; font-size: 13px; font-weight: 600; line-height: 1.25; }
+.where .where-tab { font-size: 12px; font-weight: 500; color: var(--muted); }
 .new-contacts .source-name { color: var(--turn-text); }
 .new-contacts td input { width: 100%; min-width: 160px; }
 .row-actions { white-space: nowrap; }
@@ -512,7 +525,7 @@ button.alert { border-color: var(--danger); color: var(--danger); font-weight: 6
 @keyframes spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 640px) {
-  .topbar, .toolbar, main, #banners, .legend, #new-contacts { padding-left: 16px; padding-right: 16px; }
+  .topbar, .toolbar, main, #banners, .legend, #new-contacts, #starred { padding-left: 16px; padding-right: 16px; }
   .toolbar input[type="search"] { width: 100%; }
   .source-head, .tab-head { flex-wrap: wrap; }
 }

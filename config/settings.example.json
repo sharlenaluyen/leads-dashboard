@@ -8,5 +8,6 @@
   "showStarred": true,
   "allowStarring": true,
   "starMode": "duplicate",
-  "starredLayout": "tabs"
+  "starredLayout": "tabs",
+  "starredColor": "default"
 }

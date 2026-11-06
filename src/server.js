@@ -104,6 +104,7 @@ function settingsView(s) {
     allowStarring: s.allowStarring !== false,
     starMode: s.starMode,
     starredLayout: s.starredLayout,
+    starredColor: s.starredColor,
     // The port this server is listening on; a new one applies after a restart.
     runningPort: settings.port,
   };

@@ -181,14 +181,15 @@ is back.
 
 Starred works like the other sections: the filters apply, rows sort the same
 way, rows can be ticked for drafting, and edits to priority or status are
-written to the sheet as usual. Four settings (**Settings → Starred**) shape it:
+written to the sheet as usual. Five settings (**Settings → Starred**) shape it:
 
 | Setting | Key | Default | |
 | --- | --- | --- | --- |
 | Show Starred section | `showStarred` | on | Shows the section, even when nothing is starred. |
 | Allow starring | `allowStarring` | on | Shows the ☆ on every row. Off hides them; stars already set stay. |
 | Starring a row | `starMode` | `"duplicate"` | `"duplicate"`: the row shows in Starred and in its own section. `"move"`: only in Starred. Move only applies while Starred is shown, so a row is never hidden everywhere. |
-| Starred rows are grouped | `starredLayout` | `"tabs"` | `"tabs"`: one subsection per sheet tab, like other sections. `"labels"`: one list, each row labelled with its section and tab. |
+| Starred rows are grouped | `starredLayout` | `"tabs"` | `"tabs"`: one subsection per sheet tab, like other sections. `"labels"`: one list, with a **Section · Tab** column left of Business. |
+| Starred color | `starredColor` | `"default"` | The section's header color. `"default"` matches the other sections; or `"amber"`, `"green"`, `"rose"`, `"slate"`. |
 
 ## Sync
 
@@ -412,6 +413,7 @@ call has server-side refusal fallback turned on.
 | `allowStarring` | `true` | Show the ☆ on every row |
 | `starMode` | `"duplicate"` | or `"move"` |
 | `starredLayout` | `"tabs"` | or `"labels"` |
+| `starredColor` | `"default"` | or `"amber"`, `"green"`, `"rose"`, `"slate"` |
 
 **The dashboard starts read-only.** `writeBack` and `createDrafts` are both
 off by default, so a fresh setup can sync and show your leads but never

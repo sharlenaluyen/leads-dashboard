@@ -319,7 +319,8 @@ function renderStarred(f) {
     counts
   );
   const body = el("div", { class: "tabs" });
-  const node = el("section", { class: "source starred" }, head, body);
+  const color = state.settings.starredColor;
+  const node = el("section", { class: `source starred${color && color !== "default" ? ` c-${color}` : ""}` }, head, body);
   renderCounts(counts, entries.map((e) => e.lead));
   makeCollapsible(node, head, "__starred");
 
@@ -726,6 +727,8 @@ function leadSubsection(key, title, entries, f, { meta = "", flat = false, label
   $(".tab-name", node).textContent = title;
   $(".tab-meta", node).textContent = meta;
   renderCounts($(".counts", node), entries.map((e) => e.lead));
+  // A "Section · Tab" column left of Business, for Starred's single list.
+  if (label) $("thead th:nth-child(3)", node).before(el("th", {}, "Section · Tab"));
 
   const shown = entries
     .filter(({ lead: l }) => (f.status === "__none" ? !l.followUpStatus && matches(l, { ...f, status: "" }) : matches(l, f)))
@@ -874,11 +877,12 @@ function renderRow(source, lead, { label = false } = {}) {
     { class: [isClosed(lead.followUpStatus) && "closed", lead.priority != null && `urg-${lead.priority}`].filter(Boolean).join(" ") },
     widenHitArea(cb, el("td", { class: "cb" }, cb)),
     el("td", {}, el("span", { class: `action a-${action.key}`, title: action.title }, action.label)),
+    label ? el("td", { class: "where-cell" }, el("span", { class: "where", title: `${source.name} · ${lead.tab}` }, el("span", { class: "where-source" }, source.name), el("span", { class: "where-tab" }, lead.tab))) : null,
     el(
       "td",
       {},
       el("div", { class: "biz-line" }, star, el("div", { class: "biz" }, name, lead.draftId ? el("span", { class: "draft-flag", title: `Gmail draft ${lead.draftId}` }, "draft") : null)),
-      el("div", { class: "sub" }, label ? [el("span", { class: "where" }, `${source.name} · ${lead.tab}`), lead.emails.join(", ")] : `${lead.emails.join(", ")} · ${lead.tab}`)
+      el("div", { class: "sub" }, label ? lead.emails.join(", ") : `${lead.emails.join(", ")} · ${lead.tab}`)
     ),
     lastCell,
     el("td", { class: "when" }, lead.lastFollowedUpAt ? fmtDate(lead.lastFollowedUpAt) : el("span", { class: "muted" }, "–")),

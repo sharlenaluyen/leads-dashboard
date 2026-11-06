@@ -423,8 +423,23 @@ test("Starred groups rows by sheet tab, or lists them with labels", async () => 
 
   page = await boot(appState({ sources, settings: { starredLayout: "labels" } }));
   assert.equal(page.$("#starred").querySelectorAll("table").length, 1);
-  const labels = [...page.$("#starred").querySelectorAll(".where")].map((n) => n.textContent).sort();
+  // The label gets its own column, just left of Business.
+  const headers = [...page.$("#starred").querySelectorAll("thead th")].map((th) => th.textContent);
+  assert.deepEqual(headers.slice(1, 4), ["Next", "Section · Tab", "Business"]);
+  const labels = [...page.$("#starred").querySelectorAll("tbody tr")].map((tr) => tr.children[2].querySelector(".where").title).sort();
   assert.deepEqual(labels, ["Sheet a · Leads", "Sheet a · Other", "Sheet b · Leads"]);
+  // Every row has as many cells as the header has columns.
+  assert.ok([...page.$("#starred").querySelectorAll("tbody tr")].every((tr) => tr.children.length === headers.length));
+  // Regular sections don't get the column.
+  assert.equal(page.$("#sections").querySelectorAll(".where").length, 0);
+});
+
+test("Starred matches the other sections' color unless a color is picked", async () => {
+  page = await boot(appState({ sources: [source("a", [lead()])] }));
+  assert.equal(page.$("#starred .starred").className, "source starred");
+  page.close();
+  page = await boot(appState({ sources: [source("a", [lead()])], settings: { starredColor: "green" } }));
+  assert.ok(page.$("#starred .starred").classList.contains("c-green"));
 });
 
 test("filters apply inside Starred too", async () => {

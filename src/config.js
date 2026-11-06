@@ -61,6 +61,8 @@ const DEFAULT_SETTINGS = {
   // "tabs": Starred groups rows into one subsection per sheet tab;
   // "labels": one list, each row labelled with its section and tab.
   starredLayout: "tabs",
+  // Header color of the Starred section; "default" matches the other sections.
+  starredColor: "default",
 };
 
 // A file that won't parse (cut off by a crash, or a bad hand edit) falls
@@ -114,6 +116,7 @@ export function loadSettings() {
 export const DRAFTERS = ["claude-code", "api"];
 export const STAR_MODES = ["duplicate", "move"];
 export const STARRED_LAYOUTS = ["tabs", "labels"];
+export const STARRED_COLORS = ["default", "amber", "green", "rose", "slate"];
 
 const onOff = (key) => (v) => {
   if (typeof v !== "boolean") throw new Error(`${key} must be on or off`);
@@ -157,6 +160,7 @@ const SETTING_RULES = {
   allowStarring: onOff("allowStarring"),
   starMode: oneOf("starMode", STAR_MODES),
   starredLayout: oneOf("starredLayout", STARRED_LAYOUTS),
+  starredColor: oneOf("starredColor", STARRED_COLORS),
 };
 
 // Applies `change` on top of what's in the file now (not the defaults), so
