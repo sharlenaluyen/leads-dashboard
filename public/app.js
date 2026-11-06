@@ -104,9 +104,24 @@ const TOAST_ICONS = {
   info: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M8 7v5"/><path d="M8 4h.01"/></svg>',
 };
 
+// A modal dialog sits in the browser's top layer, above any z-index, so a
+// toast in <body> would show behind it. Keep the toast inside the topmost
+// open modal (or <body> when none is open).
+function toastHost() {
+  return [...document.querySelectorAll("dialog[open]")].filter((d) => d.matches(":modal")).at(-1) || document.body;
+}
+document.querySelectorAll("dialog").forEach((d) =>
+  d.addEventListener("close", () => {
+    const node = $("#toast");
+    if (d.contains(node)) toastHost().append(node);
+  })
+);
+
 // title: the short headline; detail: an optional second line.
 function toast(title, { detail = "", kind = "", sticky = false } = {}) {
   const node = $("#toast");
+  const host = toastHost();
+  if (node.parentElement !== host) host.append(node);
   clearTimeout(toastTimer);
   node.className = `toast${kind ? ` ${kind}` : ""}`;
   node.setAttribute("role", kind === "error" ? "alert" : "status");
