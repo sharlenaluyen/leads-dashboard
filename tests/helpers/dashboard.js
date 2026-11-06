@@ -57,7 +57,14 @@ export function appState({ sources = [], settings = {} } = {}) {
     accounts: [{ alias: "work", email: "me@example.com" }],
     newContacts: [],
     lastSync: null,
-    settings: { writeBack: true, createDrafts: true, drafter: "api", drafterModel: "", draftBatchSize: 5, showStarred: true, allowStarring: true, starMode: "duplicate", starredLayout: "tabs", starredColor: "default", ...settings },
+    settings: { writeBack: true, createDrafts: true, drafter: "api", drafterModel: "", draftBatchSize: 5, palette: "periwinkle", accentColor: "",
+      dueSoonDays: 7, overdueDays: 14, followUpBy: "priority", autoSync: "off",
+      draftTone: "", draftSignOff: "", draftAboutMe: "",
+      density: "comfortable", dateFormat: "both", fontSize: "normal", hiddenColumns: [], overdueColor: "", dueSoonColor: "",
+      defaultSort: "action", showClosedDefault: false, sectionsStart: "remember", toastSeconds: 6, doneToasts: true,
+      confirmBulk: false, undoSeconds: 10,
+      showStarred: true, allowStarring: true, starMode: "duplicate", starredLayout: "tabs", starredColor: "default",
+      ...settings },
   };
 }
 
@@ -67,7 +74,7 @@ export function appState({ sources = [], settings = {} } = {}) {
  * Every request is recorded in `requests`.
  */
 export async function boot(state, routes = {}) {
-  const dom = new JSDOM(html, { runScripts: "outside-only", url: "http://localhost:3000/" });
+  const dom = new JSDOM(html, { runScripts: "outside-only", pretendToBeVisual: true, url: "http://localhost:3000/" });
   const { window } = dom;
   const requests = [];
 

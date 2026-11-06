@@ -40,3 +40,12 @@ test("parseDrafts tolerates fences and drops malformed entries", () => {
 test("parseDrafts rejects a reply without a list", () => {
   assert.throws(() => parseDrafts("Sorry, I can't"), /didn't return a list/);
 });
+
+test("buildPrompt includes the drafting voice from settings", () => {
+  const items = [{ key: "1", businessName: "X", email: "x@y.com", thread: [] }];
+  const prompt = buildPrompt(items, "", { tone: "brief", signOff: "Thanks,\nSam", aboutMe: "I run a bakery." });
+  assert.match(prompt, /Tone: Brief/);
+  assert.match(prompt, /sign-off, exactly as written:\nThanks,\nSam/);
+  assert.match(prompt, /I run a bakery\./);
+  assert.doesNotMatch(buildPrompt(items, ""), /standing preferences/);
+});

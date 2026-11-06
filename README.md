@@ -409,6 +409,27 @@ call has server-side refusal fallback turned on.
 | `drafter` | `"claude-code"` | or `"api"` |
 | `drafterModel` | unset | Model for the drafter |
 | `draftBatchSize` | `8` | Leads per Claude call |
+| `palette` | `"periwinkle"` | Dashboard colors: or `"ocean"`, `"forest"`, `"rose"`, `"graphite"`. Each has a light and a dark version. |
+| `accentColor` | unset | A hex color like `"#1f6fa8"` for buttons, links and highlights, in place of the palette's own |
+| `overdueColor`, `dueSoonColor` | unset | Hex colors for priority 3 / 2 rows and the overdue / due-soon age |
+| `dueSoonDays` | `7` | Days since the last email before a row's age turns amber |
+| `overdueDays` | `14` | Days before it turns red; must be more than `dueSoonDays` |
+| `followUpBy` | `"priority"` | When Next action says Follow up: `"priority"` (priority 3) or `"timing"` (priority 3, or you sent last and it's past `overdueDays`) |
+| `autoSync` | `"off"` | or `"open"` (when the page opens), `"15"` / `"60"` (minutes, while the page is open and visible) |
+| `draftTone` | `""` | Match the thread; or `"friendly"`, `"brief"`, `"formal"` |
+| `draftSignOff` | `""` | Ends every draft, as written (up to 200 characters) |
+| `draftAboutMe` | `""` | Context about you, sent to Claude with every batch (up to 1000 characters) |
+| `density` | `"comfortable"` | or `"compact"` |
+| `fontSize` | `"normal"` | or `"small"`, `"large"` |
+| `dateFormat` | `"both"` | Date plus "3 days ago"; or `"relative"`, `"absolute"` (2026-11-03) |
+| `hiddenColumns` | `[]` | Any of `"action"`, `"details"`, `"lastEmail"`, `"lastFollowedUp"`, `"priority"`, `"status"` |
+| `defaultSort` | `"action"` | or `"priority"`, `"lastEmail"` (oldest first), `"name"` |
+| `showClosedDefault` | `false` | Tick Show closed when the page opens |
+| `sectionsStart` | `"remember"` | or `"expanded"`, `"collapsed"` |
+| `toastSeconds` | `6` | How long a toast stays (2–60) |
+| `doneToasts` | `true` | Off hides "done" confirmations; errors, progress and Undo still show |
+| `confirmBulk` | `false` | Ask before a bulk priority/status change and before Save all to Gmail drafts |
+| `undoSeconds` | `10` | How long Undo stays on the toast after a priority/status change (0–300; 0 turns it off) |
 | `showStarred` | `true` | Show the Starred section (see [Starred](#starred)) |
 | `allowStarring` | `true` | Show the ☆ on every row |
 | `starMode` | `"duplicate"` | or `"move"` |

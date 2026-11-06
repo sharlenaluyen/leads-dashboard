@@ -39,7 +39,7 @@ export async function draftEmails(items, instructions) {
       try {
         const text = await backend.complete({
           system: SYSTEM_PROMPT,
-          prompt: buildPrompt(batch, instructions),
+          prompt: buildPrompt(batch, instructions, { tone: settings.draftTone, signOff: settings.draftSignOff, aboutMe: settings.draftAboutMe }),
           model: settings.drafterModel || undefined,
           timeoutMs,
         });

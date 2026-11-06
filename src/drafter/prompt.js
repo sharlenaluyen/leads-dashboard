@@ -17,10 +17,28 @@ Reply with only a JSON array, no prose and no code fences:
 
 const MAX_MESSAGE_CHARS = 4000;
 
+const TONES = {
+  friendly: "Warm and friendly, conversational.",
+  brief: "Brief and to the point: a few short sentences.",
+  formal: "Formal and professional.",
+};
+
+// The user's standing voice settings (Settings → Drafting), as prompt text.
+export function voiceText({ tone, signOff, aboutMe } = {}) {
+  const lines = [];
+  if (TONES[tone]) lines.push(`- Tone: ${TONES[tone]} This takes priority over matching the thread's tone.`);
+  if (signOff?.trim()) lines.push(`- End every email with this sign-off, exactly as written:\n${signOff.trim()}`);
+  if (aboutMe?.trim()) lines.push(`- About the user, for context (don't quote it back): ${aboutMe.trim()}`);
+  return lines.length ? `The user's standing preferences for every email:\n${lines.join("\n")}` : "";
+}
+
 // One prompt covering a batch of leads. Message bodies and notes from the
 // lead are wrapped as untrusted, since anyone can email the user.
-export function buildPrompt(items, instructions) {
+// voice: { tone, signOff, aboutMe } from settings.
+export function buildPrompt(items, instructions, voice) {
   const parts = [];
+  const standing = voiceText(voice);
+  if (standing) parts.push(standing);
   if (instructions?.trim()) parts.push(`Instructions from the user for this batch:\n${instructions.trim()}`);
   for (const item of items) {
     const lines = [`### Lead key: ${item.key}`, `Business: ${item.businessName || "(unknown)"}`, `Email: ${item.email}`];

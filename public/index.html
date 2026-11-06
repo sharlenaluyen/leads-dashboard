@@ -6,10 +6,18 @@
   <title>Follow-ups</title>
   <link rel="stylesheet" href="styles.css">
   <script>
-    // Apply a saved light/dark choice before the page paints (see app.js).
+    // Apply a saved light/dark choice and colors before the page paints
+    // (see app.js; the server's settings take over once they load).
     try {
+      const root = document.documentElement;
       const t = localStorage.getItem("theme");
-      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+      if (t === "light" || t === "dark") root.dataset.theme = t;
+      // Palette, colors, density, text size, hidden columns (app.js lookFor).
+      const look = JSON.parse(localStorage.getItem("look") || "null");
+      if (look) {
+        Object.assign(root.dataset, look.data);
+        for (const [k, v] of Object.entries(look.vars)) root.style.setProperty(k, v);
+      }
     } catch {}
   </script>
 </head>
@@ -142,7 +150,7 @@
     </form>
     <p class="muted">Saved to <code>config/settings.json</code> as soon as you change them, and used from the next action on. A change waits for a running sync to finish.</p>
     <div class="settings">
-      <h3>What the dashboard may change</h3>
+      <h3>Dashboard Changes</h3>
       <label class="setting">
         <span class="setting-text"><strong>Write to spreadsheets</strong><span class="sub">Dates, priority, status, draft id and added rows. Off: sync still runs and reports how many cell updates are held.</span></span>
         <input type="checkbox" class="switch" data-setting="writeBack">
@@ -186,6 +194,36 @@
         </select>
       </label>
 
+      <h3>Safety</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Confirm before writing in bulk</strong><span class="sub">Asks first before a bulk priority or status change from the selection bar, and before Save all to Gmail drafts.</span></span>
+        <input type="checkbox" class="switch" data-setting="confirmBulk">
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Undo window</strong><span class="sub">How long the Undo button stays on the toast after you change a priority or status. 0 turns it off. Every change also stays in History.</span></span>
+        <span class="with-unit"><input type="number" data-setting="undoSeconds" min="0" max="300" step="1"><span class="muted">seconds</span></span>
+      </label>
+
+      <h3>Follow-up timing</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Due soon after</strong><span class="sub">Days since the last email before the row's age turns amber.</span></span>
+        <span class="with-unit"><input type="number" data-setting="dueSoonDays" min="1" max="365" step="1"><span class="muted">days</span></span>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Overdue after</strong><span class="sub">Days before it turns red. Must be more than Due soon. Under Due soon counts as too recent to chase.</span></span>
+        <span class="with-unit"><input type="number" data-setting="overdueDays" min="2" max="366" step="1"><span class="muted">days</span></span>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Mark “Follow up” when</strong><span class="sub">Next action “Follow up” sorts rows near the top. Priority comes from the sheet; timing also flags rows past Overdue, whatever their priority.</span></span>
+        <select data-setting="followUpBy"><option value="priority">Priority is 3</option><option value="timing">Priority is 3, or overdue by timing</option></select>
+      </label>
+
+      <h3>Sync</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Sync automatically</strong><span class="sub">Timed syncs run only while this page is open and visible, and wait while a dialog is open or you're making changes.</span></span>
+        <select data-setting="autoSync"><option value="off">Off</option><option value="open">When the page opens</option><option value="15">Every 15 minutes</option><option value="60">Every hour</option></select>
+      </label>
+
       <h3>Drafting</h3>
       <label class="setting">
         <span class="setting-text"><strong>Run Claude with</strong><span class="sub">Claude Code uses your plan; the API needs the SDK installed and ANTHROPIC_API_KEY.</span></span>
@@ -208,12 +246,101 @@
         <span class="setting-text"><strong>Leads per Claude call</strong><span class="sub">Lower this if drafting times out.</span></span>
         <input type="number" data-setting="draftBatchSize" min="1" max="40" step="1">
       </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Tone</strong><span class="sub">Default matches the tone of your earlier emails in each thread.</span></span>
+        <select data-setting="draftTone"><option value="">Match the thread</option><option value="friendly">Friendly</option><option value="brief">Brief</option><option value="formal">Formal</option></select>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Sign-off</strong><span class="sub">Ends every draft, as written. Blank: Claude copies how you signed earlier emails.</span></span>
+        <textarea data-setting="draftSignOff" rows="3" maxlength="200" placeholder="Thanks,&#10;Sharlena"></textarea>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>About me</strong><span class="sub">A few lines about you and what you offer, sent to Claude with every batch so drafts need less editing.</span></span>
+        <textarea data-setting="draftAboutMe" rows="4" maxlength="1000" placeholder="I run a small studio that…"></textarea>
+      </label>
+
+      <h3>Display</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Row density</strong><span class="sub">Compact fits more leads on screen.</span></span>
+        <select data-setting="density"><option value="comfortable">Comfortable</option><option value="compact">Compact</option></select>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Text size</strong><span class="sub">For the whole dashboard.</span></span>
+        <select data-setting="fontSize"><option value="small">Small</option><option value="normal">Normal</option><option value="large">Large</option></select>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Dates</strong><span class="sub">How Last email and Last followed up show.</span></span>
+        <select data-setting="dateFormat"><option value="both">Date and “3 days ago”</option><option value="relative">“3 days ago”</option><option value="absolute">2026-11-03</option></select>
+      </label>
+      <div class="setting columns">
+        <span class="setting-text"><strong>Columns</strong><span class="sub">Untick to hide a column in every section. Business and the checkboxes always show.</span></span>
+        <span class="column-picker" id="column-picker">
+          <label class="check"><input type="checkbox" data-column="action"> Next</label>
+          <label class="check"><input type="checkbox" data-column="details"> Emails &amp; tab line</label>
+          <label class="check"><input type="checkbox" data-column="lastEmail"> Last email</label>
+          <label class="check"><input type="checkbox" data-column="lastFollowedUp"> Last followed up</label>
+          <label class="check"><input type="checkbox" data-column="priority"> Priority</label>
+          <label class="check"><input type="checkbox" data-column="status"> Follow-up status</label>
+        </span>
+      </div>
+
+      <h3>Behavior</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Sort rows by</strong><span class="sub">Within each tab.</span></span>
+        <select data-setting="defaultSort"><option value="action">Next action</option><option value="priority">Priority (3 first)</option><option value="lastEmail">Last email (oldest first)</option><option value="name">Business name (A–Z)</option></select>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Show closed leads on open</strong><span class="sub">Ticks Show closed when the page opens. Off hides rows marked “Closed – …” until you tick it.</span></span>
+        <input type="checkbox" class="switch" data-setting="showClosedDefault">
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Sections on open</strong><span class="sub">Remember keeps each section and tab the way you left it.</span></span>
+        <select data-setting="sectionsStart"><option value="remember">Remember</option><option value="expanded">All open</option><option value="collapsed">All closed</option></select>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Toasts stay for</strong><span class="sub">How long a message in the corner stays before it fades.</span></span>
+        <span class="with-unit"><input type="number" data-setting="toastSeconds" min="2" max="60" step="1"><span class="muted">seconds</span></span>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Show “done” toasts</strong><span class="sub">Off hides confirmations like “Sync finished”. Errors, progress and Undo still show.</span></span>
+        <input type="checkbox" class="switch" data-setting="doneToasts">
+      </label>
 
       <h3>Server</h3>
       <label class="setting">
         <span class="setting-text"><strong>Port</strong><span class="sub" id="port-note"></span></span>
         <input type="number" data-setting="port" min="1024" max="65535" step="1">
       </label>
+
+      <h3>Colors</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Palette</strong><span class="sub">The dashboard's colors. Each has a light and a dark version, so the header's light/dark button still works.</span></span>
+        <select data-setting="palette">
+          <option value="periwinkle">Periwinkle (default)</option>
+          <option value="ocean">Ocean</option>
+          <option value="forest">Forest</option>
+          <option value="rose">Rose</option>
+          <option value="graphite">Graphite</option>
+        </select>
+      </label>
+      <div class="setting">
+        <label class="setting-text" for="accentColor-input"><strong>Accent color</strong><span class="sub">Buttons, links, switches and highlights, in place of the palette's own. Lightened for dark mode.</span></label>
+        <div class="color-setting" data-color-setting="accentColor">
+          <button type="button" class="color-btn" id="accentColor-input" aria-haspopup="dialog" aria-expanded="false"><span class="swatch"></span><span class="color-name">Default</span></button>
+        </div>
+      </div>
+      <div class="setting">
+        <label class="setting-text" for="overdueColor-input"><strong>Overdue color</strong><span class="sub">Priority 3 rows and the overdue age. Lightened for dark mode.</span></label>
+        <div class="color-setting" data-color-setting="overdueColor">
+          <button type="button" class="color-btn" id="overdueColor-input" aria-haspopup="dialog" aria-expanded="false"><span class="swatch"></span><span class="color-name">Default</span></button>
+        </div>
+      </div>
+      <div class="setting">
+        <label class="setting-text" for="dueSoonColor-input"><strong>Due soon color</strong><span class="sub">Priority 2 rows and the due-soon age. Lightened for dark mode.</span></label>
+        <div class="color-setting" data-color-setting="dueSoonColor">
+          <button type="button" class="color-btn" id="dueSoonColor-input" aria-haspopup="dialog" aria-expanded="false"><span class="swatch"></span><span class="color-name">Default</span></button>
+        </div>
+      </div>
       <p id="settings-error" class="error" hidden></p>
     </div>
   </dialog>
@@ -248,12 +375,12 @@
           <thead>
             <tr>
               <th class="cb"><input type="checkbox" class="select-all" aria-label="Select all"></th>
-              <th>Next</th>
+              <th class="col-action">Next</th>
               <th>Business</th>
-              <th>Last email</th>
-              <th>Last followed up</th>
-              <th>Priority</th>
-              <th>Follow-up status</th>
+              <th class="col-lastEmail">Last email</th>
+              <th class="col-lastFollowedUp">Last followed up</th>
+              <th class="col-priority">Priority</th>
+              <th class="col-status">Follow-up status</th>
             </tr>
           </thead>
           <tbody></tbody>
