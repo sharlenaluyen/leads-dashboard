@@ -341,6 +341,39 @@ export function addressWrites(adds, sheetRows) {
   }).filter((w) => w.added.length);
 }
 
+// Splits updates into those whose row is still where this sync read it and
+// those whose row moved since (sorted, inserted above, deleted, email
+// changed) or whose tab's columns moved. `fresh` is each tab's values as
+// re-read just before writing. Same check a dashboard edit makes, for every
+// row at once. An email-cell write also needs the cell unchanged, since it
+// rewrites the whole cell.
+export function confirmRows(updates, sheetRows, fresh) {
+  const tabs = new Map();
+  const tabNow = (tab) => {
+    if (!tabs.has(tab)) {
+      const parsed = parseTab(fresh[tab] || []);
+      tabs.set(tab, parsed.ok ? { parsed, byRow: new Map(parsed.rows.map((r) => [r.rowNumber, r])) } : null);
+    }
+    return tabs.get(tab);
+  };
+  const ok = [];
+  const moved = new Set();
+  for (const u of updates) {
+    const row = sheetRows.get(u.leadId);
+    const now = tabNow(row.tab);
+    const same =
+      now &&
+      now.parsed.columns.email === row.columns.email &&
+      now.parsed.columns[u.key] === row.columns[u.key] &&
+      now.byRow.get(row.rowNumber)?.email === row.email &&
+      (u.key !== "email" || now.byRow.get(row.rowNumber).emailCell === String(row.emailCell || row.email).trim());
+    if (same) ok.push(u);
+    else moved.add(u.leadId);
+  }
+  // A lead is written all or nothing.
+  return { ok: ok.filter((u) => !moved.has(u.leadId)), moved };
+}
+
 // Gmail -> sheet, then the sheet's answer -> the cache the dashboard reads.
 // All of a spreadsheet's changes go in one write call.
 async function writeBack(source, sheetRows, counter, summary, { adds = [] } = {}) {
@@ -357,10 +390,33 @@ async function writeBack(source, sheetRows, counter, summary, { adds = [] } = {}
   // review list instead.
   const alias = getAccountInfo(source.account).alias;
   queueForReview(adds.filter((a) => !sheetRows.has(a.lead.id)), alias);
-  const updates = [...gmailWrites, ...addressWrites(adds, sheetRows)];
+  const planned = [...gmailWrites, ...addressWrites(adds, sheetRows)];
   if (!loadSettings().writeBack) {
-    summary.writesHeld += updates.length;
+    summary.writesHeld += planned.length;
     return;
+  }
+  // Writes go by row number, so re-read the tabs being written and drop any
+  // row that moved since the read above (e.g. the sheet was sorted mid-sync).
+  // Their Gmail columns are written by the next sync; their new people wait
+  // in the review list.
+  const sheets = sheetsClientFor(source.account);
+  let updates = planned;
+  let moved = new Set();
+  if (planned.length) {
+    let fresh;
+    try {
+      fresh = await readTabs(sheets, source.spreadsheetId, [...new Set(planned.map((u) => sheetRows.get(u.leadId).tab))], counter);
+    } catch (err) {
+      queueForReview(adds, alias);
+      throw err;
+    }
+    ({ ok: updates, moved } = confirmRows(planned, sheetRows, fresh));
+    if (moved.size) {
+      queueForReview(adds.filter((a) => moved.has(a.lead.id)), alias);
+      summary.problems.push(
+        `${source.name}: ${moved.size} row(s) moved in the spreadsheet during the sync and weren't written; the next sync updates them.`
+      );
+    }
   }
   // Logged before writing, so no written cell ever goes unlogged.
   const logged = logChanges(
@@ -382,7 +438,7 @@ async function writeBack(source, sheetRows, counter, summary, { adds = [] } = {}
   );
   let now;
   try {
-    now = await writeCells(sheetsClientFor(source.account), source.spreadsheetId, updates, counter);
+    now = await writeCells(sheets, source.spreadsheetId, updates, counter);
   } catch (err) {
     markFailed(logged, err);
     queueForReview(adds, alias);
@@ -429,9 +485,10 @@ async function writeBack(source, sheetRows, counter, summary, { adds = [] } = {}
     const rehash = db.prepare("UPDATE leads SET row_hash = ? WHERE id = ?");
     for (const id of touched) rehash.run(rowHash(sheetRows.get(id)), id);
     // Every row read this sync has now had its reopen applied (or didn't
-    // need one); rows in tabs that couldn't be read keep theirs for later.
+    // need one); rows in tabs that couldn't be read, and rows that moved
+    // before the write, keep theirs for later.
     const done = db.prepare("DELETE FROM pending_reopen WHERE lead_id = ?");
-    for (const id of replies) if (sheetRows.has(id)) done.run(id);
+    for (const id of replies) if (sheetRows.has(id) && !moved.has(id)) done.run(id);
   });
   addCustomStatuses(source.id, newStatuses);
 }

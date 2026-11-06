@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { applyMessage, contactsIn, summarizeMessage, syncAccount } from "../src/gmailSync.js";
-import { addressWrites, autoStatus, pendingWrites } from "../src/sync.js";
+import { addressWrites, autoStatus, confirmRows, pendingWrites } from "../src/sync.js";
 import { formatDate } from "../src/sheets.js";
 
 class Counter {
@@ -342,4 +342,45 @@ test("a lead's other addresses count for matching", async () => {
 test("own domains leave out free mail providers", async () => {
   const { ownDomainsOf } = await import("../src/sync.js");
   assert.deepEqual([...ownDomainsOf(new Set(["me@acme.com", "me@gmail.com"]))], ["acme.com"]);
+});
+
+test("confirmRows drops writes to rows that moved since the sync read the sheet", () => {
+  const header = ["email", "business name", "last email", "last email dir", "last followed up", "draft id", "follow-up status", "priority", "notes"];
+  const row = (email, n) => ({ tab: "main", rowNumber: n, columns: COLS, email, emails: [email], emailCell: email });
+  const sheetRows = new Map([
+    [1, row("jane@biz.com", 2)],
+    [2, row("bob@biz.com", 3)],
+  ]);
+  const updates = [
+    { leadId: 1, key: "lastEmail", range: "'main'!C2", value: "2026-11-01" },
+    { leadId: 1, key: "followUpStatus", range: "'main'!G2", value: "Pending action" },
+    { leadId: 2, key: "lastEmail", range: "'main'!C3", value: "2026-11-02" },
+  ];
+
+  const unchanged = { main: [header, ["jane@biz.com"], ["bob@biz.com"]] };
+  assert.deepEqual(confirmRows(updates, sheetRows, unchanged), { ok: updates, moved: new Set() });
+
+  const sorted = { main: [header, ["bob@biz.com"], ["jane@biz.com"]] };
+  assert.deepEqual(confirmRows(updates, sheetRows, sorted), { ok: [], moved: new Set([1, 2]) });
+
+  const insertedAbove = { main: [header, ["new@x.com"], ["jane@biz.com"], ["bob@biz.com"]] };
+  assert.deepEqual(confirmRows(updates, sheetRows, insertedAbove).moved, new Set([1, 2]));
+
+  const columnsMoved = { main: [["business name", ...header.filter((h) => h !== "business name")], ["", "jane@biz.com"], ["", "bob@biz.com"]] };
+  assert.deepEqual(confirmRows(updates, sheetRows, columnsMoved).moved, new Set([1, 2]));
+
+  const janeGone = { main: [header, ["bob@biz.com"]] };
+  const out = confirmRows(updates, sheetRows, janeGone);
+  assert.deepEqual(out.moved, new Set([1, 2]), "bob shifted up a row too");
+
+  const headerRenamed = { main: [header.map((h) => (h === "draft id" ? "draft" : h)), ["jane@biz.com"], ["bob@biz.com"]] };
+  assert.deepEqual(confirmRows(updates, sheetRows, headerRenamed).ok, []);
+});
+
+test("confirmRows refuses an email-cell write when the cell was edited by hand", () => {
+  const header = ["email", "business name", "last email", "last email dir", "last followed up", "draft id", "follow-up status", "priority", "notes"];
+  const sheetRows = new Map([[1, { tab: "main", rowNumber: 2, columns: COLS, email: "jane@biz.com", emails: ["jane@biz.com"], emailCell: "jane@biz.com" }]]);
+  const updates = [{ leadId: 1, key: "email", range: "'main'!A2", value: "jane@biz.com, bob@biz.com", added: ["bob@biz.com"] }];
+  assert.deepEqual(confirmRows(updates, sheetRows, { main: [header, ["jane@biz.com"]] }).ok, updates);
+  assert.deepEqual(confirmRows(updates, sheetRows, { main: [header, ["jane@biz.com, cy@biz.com"]] }).moved, new Set([1]));
 });

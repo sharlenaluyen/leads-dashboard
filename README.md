@@ -115,6 +115,20 @@ blank dates, and sync rewrites those cells on every sync. Until that's fixed,
 keep the spreadsheet's locale (File → Settings) on United States, or format
 the date columns as `yyyy-mm-dd`.
 
+**Filtering, sorting and moving columns are safe.** A filter only hides rows,
+and the dashboard still reads all of them. Each row is identified by the first
+address in its `email` cell, not by its position, and columns are found by
+header name, so sorting rows or reordering columns is picked up on the next
+sync. What does change things:
+
+- **Deleting or clearing a row's email:** the lead disappears from the
+  dashboard.
+- **Renaming a required header:** the whole tab shows "Missing columns" and is
+  skipped.
+- **Moving the header row below row 10:** same result, because headers are
+  only searched for in the first 10 rows.
+- **Two rows with the same email in one tab:** only the first is tracked.
+
 ## Sections
 
 Each section is one spreadsheet, the tabs you list for it, and the Gmail
@@ -152,9 +166,10 @@ reorder; the order is saved in `config/sources.json`.
    Gmail's history bookmark): new messages, deleted or trashed ones, and
    drafts created, edited, sent or discarded. Any message in a lead's thread
    counts, even from someone else at their company.
-3. Writes only the cells that differ from Gmail (one call per spreadsheet,
-   only when something changed). That call returns what the sheet now holds,
-   and the dashboard is rebuilt from it.
+3. Writes only the cells that differ from Gmail (only when something
+   changed: one call to re-read the tabs being written, to confirm no row
+   moved since step 1, then one write call per spreadsheet). The write
+   returns what the sheet now holds, and the dashboard is rebuilt from it.
 
 Email columns follow Gmail: a date or draft id typed into them by hand is
 replaced on the next sync. Dates are compared as dates, so a sheet showing
@@ -198,10 +213,13 @@ before it, two **Add**s can't land on the same row, and double-clicking
 ### Known gaps
 
 - **Editing the sheet during a sync.** Sync reads the sheet, then writes about
-  1-2 seconds later by row number. If rows are inserted, deleted or sorted
-  in between, a write can land on the wrong row. The dashboard assumes you
-  don't edit the spreadsheet or draft emails during a sync (a notice says
-  when one is running); it doesn't check edits made in Sheets itself.
+  1-2 seconds later by row number. Just before writing, it re-reads the tabs
+  it's about to write and skips any row whose email (or the tab's column
+  layout) has changed since, so sorting or inserting rows mid-sync doesn't
+  put values on the wrong row. Skipped rows are listed as a problem in the
+  sync summary and written by the next sync; people found in their threads
+  go to the review list. A change made in the split second between that
+  re-read and the write still isn't caught, the same as for dashboard edits.
 - **Auto-replies and bounces count as replies.** An out-of-office reply or a
   bounce in a lead's thread is treated like a real reply: the row turns
   **Pending action**, and a Closed row reopens (clearing a priority of 0).
