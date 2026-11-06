@@ -74,11 +74,16 @@
       <button class="icon" aria-label="Close">✕</button>
     </form>
     <div id="draft-setup">
+      <div class="banner draft-off" id="draft-off" role="alert" hidden>
+        <p><strong>Save Gmail drafts is off.</strong> You won't be able to save drafts to Gmail, so Claude won't write any until you turn it on.</p>
+        <button id="draft-enable-saving" class="primary">Turn on Save Gmail drafts</button>
+        <span class="error" id="draft-enable-error" hidden></span>
+      </div>
       <p class="muted" id="draft-summary"></p>
       <label class="field">Instructions for Claude (optional)
         <textarea id="draft-instructions" rows="3" placeholder="e.g. mention we're flexible on dates, keep it to 3 sentences"></textarea>
       </label>
-      <div class="dialog-actions"><button id="draft-generate" class="primary">Write drafts</button></div>
+      <div class="dialog-actions"><button id="draft-close" hidden>Close</button><button id="draft-generate" class="primary">Write drafts</button></div>
     </div>
     <div id="draft-results"></div>
   </dialog>

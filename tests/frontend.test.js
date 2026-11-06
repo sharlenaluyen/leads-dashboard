@@ -263,3 +263,78 @@ test("saving drafts one by one leaves the dialog open", async () => {
   assert.equal(page.$("#draft-dialog").open, true);
   assert.match(page.$("#draft-results").textContent, /Saved to Gmail drafts/);
 });
+
+// --- Drafting with Save Gmail drafts off --------------------------------------
+
+async function openDraftsWithSavingOff(routes = {}) {
+  const leads = [lead({ businessName: "A" })];
+  const p = await boot(appState({ sources: [source("a", leads)], settings: { createDrafts: false } }), {
+    "POST /api/drafts/generate": () => [draftFor(leads[0])],
+    ...routes,
+  });
+  check(p, "A");
+  p.$("#draft-btn").click();
+  return p;
+}
+
+test("with Save Gmail drafts off, the draft dialog warns and offers Close instead of Write drafts", async () => {
+  page = await openDraftsWithSavingOff();
+  assert.equal(page.$("#draft-off").hidden, false);
+  assert.match(page.$("#draft-off").textContent, /Save Gmail drafts is off/);
+  assert.equal(page.$("#draft-generate").hidden, true);
+  assert.equal(page.$("#draft-close").hidden, false);
+  assert.equal(page.requests.filter((r) => r.url === "/api/drafts/generate").length, 0);
+});
+
+test("Close shuts the dialog without calling Claude", async () => {
+  page = await openDraftsWithSavingOff();
+  page.$("#draft-close").click();
+  await page.settle();
+  assert.equal(page.$("#draft-dialog").open, false);
+  assert.equal(page.requests.filter((r) => r.url === "/api/drafts/generate").length, 0);
+});
+
+test("with Save Gmail drafts on, there's no warning", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A" })])] }));
+  check(page, "A");
+  page.$("#draft-btn").click();
+  assert.equal(page.$("#draft-off").hidden, true);
+  assert.equal(page.$("#draft-generate").hidden, false);
+  assert.equal(page.$("#draft-close").hidden, true);
+});
+
+test("the warning's button turns saving on without calling Claude, and the drafts can then be saved", async () => {
+  page = await openDraftsWithSavingOff({
+    "PATCH /api/settings": (body) => ({ ...appState().settings, ...body }),
+    "POST /api/drafts/save": () => ({ replaced: false }),
+  });
+  page.$("#draft-enable-saving").click();
+  await page.settle();
+
+  assert.deepEqual(page.requests.find((r) => r.method === "PATCH").body, { createDrafts: true });
+  assert.equal(page.requests.filter((r) => r.url === "/api/drafts/generate").length, 0);
+  assert.equal(page.$("#draft-off").hidden, true);
+  assert.equal(page.$("#draft-generate").hidden, false);
+  assert.equal(page.$("#draft-close").hidden, true);
+  assert.equal(page.$("#draft-dialog").open, true);
+
+  page.$("#draft-generate").click();
+  await page.settle();
+  assert.equal(button(page, "Save to Gmail drafts").disabled, false);
+  assert.equal(button(page, "Save all to Gmail drafts").disabled, false);
+});
+
+test("if turning saving on fails, the warning stays and shows why", async () => {
+  page = await openDraftsWithSavingOff({
+    "PATCH /api/settings": () => {
+      throw { status: 500, error: "Couldn't write settings.json" };
+    },
+  });
+  page.$("#draft-enable-saving").click();
+  await page.settle();
+  assert.equal(page.$("#draft-off").hidden, false);
+  assert.equal(page.$("#draft-enable-error").hidden, false);
+  assert.match(page.$("#draft-enable-error").textContent, /Couldn't write settings.json/);
+  assert.equal(page.$("#draft-generate").hidden, true);
+  assert.equal(page.$("#draft-close").hidden, false);
+});

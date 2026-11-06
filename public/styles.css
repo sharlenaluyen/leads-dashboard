@@ -180,6 +180,8 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
   color: var(--warn-text);
 }
 .banner.error { background: var(--danger-bg); color: var(--danger); }
+.banner.draft-off { margin: 0 0 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.banner.draft-off p { margin: 0; flex: 1 1 260px; }
 .banner ul { margin: 4px 0 0; padding-left: 18px; }
 .banner.dismissible { display: flex; align-items: flex-start; gap: 8px; }
 .banner.dismissible > span { flex: 1; }

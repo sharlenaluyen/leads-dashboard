@@ -877,11 +877,41 @@ function openDraftDialog() {
   $("#draft-setup").hidden = false;
   $("#draft-results").replaceChildren();
   $("#draft-summary").textContent = `Claude will read each lead's latest thread and notes, then write a follow-up for ${selected.size} lead${selected.size === 1 ? "" : "s"}. You'll review every draft before anything is saved to Gmail.`;
+  $("#draft-enable-error").hidden = true;
+  renderDraftSavingWarning();
   dialog.showModal();
+}
+
+// With Save Gmail drafts off there's no point calling Claude: warn, offer to
+// turn it on, and swap Write drafts for Close.
+function renderDraftSavingWarning() {
+  const off = !state.settings.createDrafts;
+  $("#draft-off").hidden = !off;
+  $("#draft-generate").hidden = off;
+  $("#draft-close").hidden = !off;
+}
+
+async function enableDraftSaving() {
+  const btn = $("#draft-enable-saving");
+  const error = $("#draft-enable-error");
+  btn.disabled = true;
+  error.hidden = true;
+  try {
+    state.settings = await api("PATCH", "/api/settings", { createDrafts: true });
+    toast("Save Gmail drafts: on", { kind: "done" });
+    render();
+  } catch (err) {
+    error.textContent = err.message;
+    error.hidden = false;
+  } finally {
+    btn.disabled = false;
+  }
+  renderDraftSavingWarning();
 }
 
 async function generate() {
   const btn = $("#draft-generate");
+  if (!state.settings.createDrafts) return;
   const ids = [...selected];
   btn.disabled = true;
   btn.replaceChildren(el("span", { class: "spinner" }), " Writing…");
@@ -1089,6 +1119,8 @@ $("#bulk-priority").addEventListener("change", (e) => bulkSet("priority", e.targ
 $("#bulk-status").addEventListener("change", (e) => bulkSet("followUpStatus", e.target.value));
 $("#draft-btn").addEventListener("click", openDraftDialog);
 $("#draft-generate").addEventListener("click", generate);
+$("#draft-enable-saving").addEventListener("click", enableDraftSaving);
+$("#draft-close").addEventListener("click", () => $("#draft-dialog").close());
 $("#add-source-btn").addEventListener("click", () => openSourceDialog());
 $("#history-btn").addEventListener("click", openHistory);
 $("#signins-btn").addEventListener("click", openSignins);

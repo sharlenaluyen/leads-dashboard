@@ -345,6 +345,11 @@ Claude couldn't write that draft), the dialog stays open with the error on
 that card; click **Save all** again to retry, and drafts that already saved
 are skipped.
 
+If **Save Gmail drafts** is off when you open the dialog, there's no point
+writing drafts you can't save, so the dialog says so and offers **Turn on Save
+Gmail drafts** (which switches the setting on right there) or **Close**. No
+Claude call is made until saving is on.
+
 Threads are read four at a time, and up to two Claude calls run at once
 (`draftBatchSize` leads each). A batch that fails, or whose reply can't be
 read, is tried once more. Both tries share a 2-minute limit, so a stuck
