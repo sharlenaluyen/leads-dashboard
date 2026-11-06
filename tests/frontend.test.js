@@ -166,3 +166,100 @@ test("changing one row's priority saves just that row", async () => {
   assert.deepEqual(patches.map((r) => r.url), [`/api/leads/${leads[1].id}`]);
   assert.deepEqual(patches[0].body, { field: "priority", value: "2" });
 });
+
+// --- Saving drafts -----------------------------------------------------------
+
+const draftFor = (l, overrides = {}) => ({ leadId: l.id, email: l.email, businessName: l.businessName, subject: `Hi ${l.businessName}`, body: "Just checking in.", inThread: false, ...overrides });
+const button = (p, text) => p.$$("#draft-results button").find((b) => b.textContent === text);
+const saveRequests = (p) => p.requests.filter((r) => r.url === "/api/drafts/save");
+
+// Selects the leads, opens the dialog and writes drafts, leaving the draft list showing.
+async function writeDrafts(leads, drafts, saveRoute = () => ({ replaced: false })) {
+  const p = await boot(appState({ sources: [source("a", leads)] }), {
+    "POST /api/drafts/generate": () => drafts,
+    "POST /api/drafts/save": saveRoute,
+  });
+  for (const l of leads) check(p, l.businessName);
+  p.$("#draft-btn").click();
+  p.$("#draft-generate").click();
+  await p.settle();
+  return p;
+}
+
+test("Save all closes the dialog once every draft is saved", async () => {
+  const leads = [lead({ businessName: "A" }), lead({ businessName: "B" })];
+  page = await writeDrafts(leads, leads.map((l) => draftFor(l)));
+  assert.equal(page.$("#draft-dialog").open, true);
+
+  button(page, "Save all to Gmail drafts").click();
+  await page.settle();
+
+  assert.deepEqual(saveRequests(page).map((r) => r.body.leadId), [leads[0].id, leads[1].id]);
+  assert.equal(page.$("#draft-dialog").open, false);
+  assert.match(page.$("#toast").textContent, /Saved 2 drafts to Gmail/);
+  // Reloads so the table picks up the new draft ids.
+  assert.equal(page.requests.filter((r) => r.url === "/api/state").length, 2);
+});
+
+test("Save all keeps the dialog open when a draft fails, and a retry only resends the failed one", async () => {
+  const leads = [lead({ businessName: "Good" }), lead({ businessName: "Flaky" })];
+  let failFlaky = true;
+  page = await writeDrafts(leads, leads.map((l) => draftFor(l)), (body) => {
+    if (body.leadId === leads[1].id && failFlaky) throw { status: 502, error: "Gmail is down" };
+    return { replaced: false };
+  });
+
+  button(page, "Save all to Gmail drafts").click();
+  await page.settle();
+
+  assert.equal(page.$("#draft-dialog").open, true);
+  assert.match(page.$("#draft-results").textContent, /Gmail is down/);
+  assert.match(page.$("#toast").textContent, /1 saved, 1 not saved/);
+  const saveAll = button(page, "Save all to Gmail drafts");
+  assert.equal(saveAll.disabled, false);
+
+  failFlaky = false;
+  saveAll.click();
+  await page.settle();
+
+  assert.deepEqual(saveRequests(page).map((r) => r.body.leadId), [leads[0].id, leads[1].id, leads[1].id]);
+  assert.equal(page.$("#draft-dialog").open, false);
+  assert.match(page.$("#toast").textContent, /Saved 2 drafts to Gmail/);
+});
+
+test("Save all keeps the dialog open when Claude couldn't write one of the drafts", async () => {
+  const leads = [lead({ businessName: "Fine" }), lead({ businessName: "Broken" })];
+  page = await writeDrafts(leads, [draftFor(leads[0]), draftFor(leads[1], { subject: "", body: "", error: "No thread found" })]);
+
+  button(page, "Save all to Gmail drafts").click();
+  await page.settle();
+
+  assert.deepEqual(saveRequests(page).map((r) => r.body.leadId), [leads[0].id]);
+  assert.equal(page.$("#draft-dialog").open, true);
+  assert.match(page.$("#toast").textContent, /1 saved, 1 not saved/);
+});
+
+test("Save all skips drafts already saved one by one, then closes", async () => {
+  const leads = [lead({ businessName: "A" }), lead({ businessName: "B" })];
+  page = await writeDrafts(leads, leads.map((l) => draftFor(l)));
+
+  button(page, "Save to Gmail drafts").click();
+  await page.settle();
+  assert.equal(page.$("#draft-dialog").open, true);
+
+  button(page, "Save all to Gmail drafts").click();
+  await page.settle();
+
+  assert.deepEqual(saveRequests(page).map((r) => r.body.leadId), [leads[0].id, leads[1].id]);
+  assert.equal(page.$("#draft-dialog").open, false);
+  assert.match(page.$("#toast").textContent, /Saved 2 drafts to Gmail/);
+});
+
+test("saving drafts one by one leaves the dialog open", async () => {
+  const leads = [lead({ businessName: "A" })];
+  page = await writeDrafts(leads, [draftFor(leads[0])]);
+  button(page, "Save to Gmail drafts").click();
+  await page.settle();
+  assert.equal(page.$("#draft-dialog").open, true);
+  assert.match(page.$("#draft-results").textContent, /Saved to Gmail drafts/);
+});

@@ -339,6 +339,12 @@ writes a reply. You review and edit each one, then **Save to Gmail drafts**:
 - Saving waits for a running sync. If the email the lead's dates came from
   was deleted since the last sync, saving fails; sync, then save again.
 
+**Save all to Gmail drafts** saves them one after another and closes the
+dialog once every draft is in Gmail. If any can't be saved (a save error, or
+Claude couldn't write that draft), the dialog stays open with the error on
+that card; click **Save all** again to retry, and drafts that already saved
+are skipped.
+
 Threads are read four at a time, and up to two Claude calls run at once
 (`draftBatchSize` leads each). A batch that fails, or whose reply can't be
 read, is tried once more. Both tries share a 2-minute limit, so a stuck

@@ -916,8 +916,11 @@ function renderDraftList(drafts) {
       body,
       el("div", { class: "dialog-actions" }, status, save)
     );
+    // Resolves true once this draft is in Gmail (now or earlier), false if
+    // it failed or can't be saved.
     card.save = async () => {
-      if (card.classList.contains("saved") || save.disabled) return;
+      if (card.classList.contains("saved")) return true;
+      if (save.disabled) return false;
       save.disabled = true;
       status.replaceChildren(el("span", { class: "spinner" }), " Saving");
       try {
@@ -925,9 +928,11 @@ function renderDraftList(drafts) {
         card.classList.add("saved");
         status.textContent = r.replaced ? "Draft replaced in Gmail" : "Saved to Gmail drafts";
         save.textContent = "Saved";
+        return true;
       } catch (err) {
         status.replaceChildren(el("span", { class: "error" }, err.message));
         save.disabled = false;
+        return false;
       }
     };
     save.addEventListener("click", card.save);
@@ -936,7 +941,17 @@ function renderDraftList(drafts) {
   const saveAll = el("button", { class: "primary", disabled: !canSave }, "Save all to Gmail drafts");
   saveAll.addEventListener("click", async () => {
     saveAll.disabled = true;
-    for (const c of cards) await c.save();
+    let saved = 0;
+    for (const c of cards) if (await c.save()) saved++;
+    const failed = cards.length - saved;
+    if (failed === 0) {
+      $("#draft-dialog").close();
+      toast(`Saved ${saved} draft${saved === 1 ? "" : "s"} to Gmail`, { kind: "done" });
+    } else {
+      // Keep the dialog open so the failed cards (and their errors) stay visible.
+      saveAll.disabled = false;
+      toast(`${saved} saved, ${failed} not saved`, { kind: "error", detail: "Check the drafts still open in the dialog.", sticky: true });
+    }
     await load();
   });
   return el(
