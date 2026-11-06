@@ -377,6 +377,13 @@ call has server-side refusal fallback turned on.
 | `drafterModel` | unset | Model for the drafter |
 | `draftBatchSize` | `8` | Leads per Claude call |
 
+**The dashboard starts read-only.** `writeBack` and `createDrafts` are both
+off by default, and the checked-in `config/settings.json` keeps them off, so a
+fresh setup can sync and show your leads but never changes a spreadsheet or
+your Gmail. A banner at the top says what's turned off. Once you've checked
+that the dashboard reads your sheets correctly, switch them on in
+**Settings**.
+
 Change these from the **Settings** button in the dashboard, or by editing the
 file. The dashboard saves a change straight to the file, waits for a running
 sync to finish first, and keeps the previous version as `settings.json.bak`.
