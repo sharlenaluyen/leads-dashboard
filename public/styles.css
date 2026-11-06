@@ -286,7 +286,8 @@ th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--bor
 th { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--surface); white-space: nowrap; }
 tbody tr:not([class*="urg-"]):hover { background: var(--row-hover); }
 tbody tr:last-child td { border-bottom: none; }
-td.cb, th.cb { width: 36px; }
+td.cb, th.cb { width: 36px; cursor: pointer; }
+td.cb input, th.cb input { cursor: pointer; }
 .biz { font-weight: 500; }
 .sub { font-size: 12px; color: var(--muted); }
 .when { white-space: nowrap; }

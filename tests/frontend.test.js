@@ -63,6 +63,16 @@ test("select-all checks every visible row in the tab, and Clear unchecks them", 
   assert.equal(page.$("#actionbar").hidden, true);
 });
 
+test("clicking anywhere in a checkbox's cell toggles it, not just the box", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A" }), lead({ businessName: "B" })])] }));
+  row(page, "A").querySelector("td.cb").click();
+  assert.equal(page.$("#selected-count").textContent, "1 selected");
+  row(page, "A").querySelector("td.cb input").click();
+  assert.equal(page.$("#actionbar").hidden, true);
+  page.$("th.cb").click();
+  assert.equal(page.$("#selected-count").textContent, "2 selected");
+});
+
 // --- Bulk priority / status --------------------------------------------------
 
 test("setting priority from the selection bar updates every checked lead", async () => {

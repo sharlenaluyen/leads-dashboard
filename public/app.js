@@ -637,6 +637,7 @@ function renderTab(source, tab, f) {
   if (!all.length) empty.textContent = ts ? "No rows with an email yet." : "Not synced yet. Click Sync.";
 
   const selectAll = $(".select-all", node);
+  widenHitArea(selectAll);
   selectAll.checked = leads.length > 0 && leads.every((l) => selected.has(l.id));
   selectAll.addEventListener("change", () => {
     for (const l of leads) selectAll.checked ? selected.add(l.id) : selected.delete(l.id);
@@ -759,7 +760,7 @@ function renderRow(source, lead) {
   return el(
     "tr",
     { class: [isClosed(lead.followUpStatus) && "closed", lead.priority != null && `urg-${lead.priority}`].filter(Boolean).join(" ") },
-    el("td", { class: "cb" }, cb),
+    widenHitArea(cb, el("td", { class: "cb" }, cb)),
     el("td", {}, el("span", { class: `action a-${action.key}`, title: action.title }, action.label)),
     el(
       "td",
@@ -772,6 +773,14 @@ function renderRow(source, lead) {
     el("td", {}, priority),
     el("td", {}, status)
   );
+}
+
+// Let a click anywhere in the checkbox's cell toggle it, not just the box itself.
+function widenHitArea(cb, cell = cb.closest("td, th")) {
+  cell.addEventListener("click", (e) => {
+    if (e.target !== cb) cb.click();
+  });
+  return cell;
 }
 
 async function saveField(lead, field, value, control, { reload = false } = {}) {
