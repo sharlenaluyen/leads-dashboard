@@ -348,3 +348,208 @@ test("if turning saving on fails, the warning stays and shows why", async () => 
   assert.equal(page.$("#draft-generate").hidden, true);
   assert.equal(page.$("#draft-close").hidden, false);
 });
+test("the saved palette and accent color are applied when the page loads", async () => {
+  page = await boot(appState({ settings: { palette: "forest", accentColor: "#ffcc00" } }));
+  const root = page.document.documentElement;
+  assert.equal(root.dataset.palette, "forest");
+  assert.equal(root.dataset.accent, "custom");
+  assert.equal(root.style.getPropertyValue("--accent-custom"), "#ffcc00");
+  // A light accent gets dark text on it.
+  assert.equal(root.style.getPropertyValue("--accent-custom-text"), "#15162a");
+  page.close();
+
+  page = await boot(appState());
+  assert.equal(page.document.documentElement.dataset.palette, undefined);
+  assert.equal(page.document.documentElement.dataset.accent, undefined);
+});
+
+test("picking a palette and an accent in Settings saves and applies them; Use default goes back to the palette's", async () => {
+  page = await boot(appState(), { "PATCH /api/settings": (body) => ({ ...appState().settings, ...body }) });
+  const root = page.document.documentElement;
+  const patches = () => page.requests.filter((r) => r.method === "PATCH").map((r) => r.body);
+  page.$("#settings-btn").click();
+
+  const palette = page.$('[data-setting="palette"]');
+  palette.value = "ocean";
+  palette.dispatchEvent(new page.window.Event("change"));
+  await page.settle();
+  assert.deepEqual(patches().at(-1), { palette: "ocean" });
+  assert.equal(root.dataset.palette, "ocean");
+
+  // Open and close without picking: nothing is saved.
+  const btn = page.$("#accentColor-input");
+  btn.click();
+  assert.ok(page.$(".color-pop"));
+  assert.equal(page.$(".color-default"), null, "no Use default while there's no custom color");
+  page.$("#settings-dialog").dispatchEvent(new page.window.MouseEvent("mousedown", { bubbles: true }));
+  assert.equal(page.$(".color-pop"), null);
+  assert.equal(patches().length, 1);
+
+  // Picking a swatch saves it and closes the picker.
+  btn.click();
+  page.$('.color-choice[title="#2f7d4a"]').click();
+  await page.settle();
+  assert.equal(page.$(".color-pop"), null);
+  assert.deepEqual(patches().at(-1), { accentColor: "#2f7d4a" });
+  assert.equal(root.dataset.accent, "custom");
+  assert.equal(page.$("#accentColor-input .color-name").textContent, "#2f7d4a");
+
+  // A typed hex works too.
+  btn.click();
+  const hex = page.$(".color-hex");
+  hex.value = "123456";
+  hex.dispatchEvent(new page.window.KeyboardEvent("keydown", { key: "Enter" }));
+  await page.settle();
+  assert.deepEqual(patches().at(-1), { accentColor: "#123456" });
+
+  btn.click();
+  page.$(".color-default").click();
+  await page.settle();
+  assert.deepEqual(patches().at(-1), { accentColor: "" });
+  assert.equal(root.dataset.accent, undefined);
+  assert.equal(page.$("#accentColor-input .color-name").textContent, "Default");
+});
+
+test("picking the color the default already is saves nothing", async () => {
+  page = await boot(appState(), { "PATCH /api/settings": (body) => ({ ...appState().settings, ...body }) });
+  page.$("#settings-btn").click();
+  page.$("#accentColor-input").click();
+  page.$('.color-choice[title="#5b5fc7"]').click();
+  await page.settle();
+  assert.equal(page.requests.filter((r) => r.method === "PATCH").length, 0);
+});
+
+// --- Settings: timing, display, behavior, safety ------------------------------
+
+const daysAgo = (n) => Date.now() - n * 86_400_000;
+const PATCH_LEAD = { "PATCH /api/leads/:id": () => ({}) };
+
+test("follow-up timing sets the age colors, and can flag overdue rows to follow up", async () => {
+  const leads = [lead({ businessName: "Old", lastEmailAt: daysAgo(5), lastEmailDir: "sent" }), lead({ businessName: "New", lastEmailAt: daysAgo(1), lastEmailDir: "sent" })];
+  page = await boot(appState({ sources: [source("a", leads)] }));
+  assert.equal(row(page, "Old").querySelector(".age").className, "sub age ");
+  page.close();
+
+  page = await boot(appState({ sources: [source("a", leads)], settings: { dueSoonDays: 2, overdueDays: 4, followUpBy: "timing" } }));
+  assert.ok(row(page, "Old").querySelector(".age").classList.contains("very-stale"));
+  assert.equal(row(page, "Old").querySelector(".action").textContent, "Follow up");
+  assert.equal(row(page, "New").querySelector(".action").textContent, "Waiting");
+});
+
+test("rows sort by the chosen order", async () => {
+  const leads = [
+    lead({ businessName: "Bravo", priority: 1, lastEmailAt: daysAgo(2), lastEmailDir: "sent" }),
+    lead({ businessName: "alpha", priority: 3, lastEmailAt: daysAgo(9), lastEmailDir: "sent" }),
+    lead({ businessName: "Charlie", priority: 2, lastEmailAt: daysAgo(30), lastEmailDir: "sent" }),
+  ];
+  for (const [sort, want] of [["name", ["alpha", "Bravo", "Charlie"]], ["priority", ["alpha", "Charlie", "Bravo"]], ["lastEmail", ["Charlie", "alpha", "Bravo"]]]) {
+    page = await boot(appState({ sources: [source("a", leads)], settings: { defaultSort: sort } }));
+    assert.deepEqual(names(page), want, sort);
+    page.close();
+  }
+  page = null;
+});
+
+test("dates show as chosen", async () => {
+  const at = new Date(2026, 10, 3, 12).getTime();
+  const leads = [lead({ businessName: "A", lastEmailAt: at, lastEmailDir: "sent", lastFollowedUpAt: at })];
+  page = await boot(appState({ sources: [source("a", leads)], settings: { dateFormat: "absolute" } }));
+  assert.match(row(page, "A").querySelector(".col-lastEmail").textContent, /^2026-11-03/);
+  assert.equal(row(page, "A").querySelector(".col-lastFollowedUp").textContent, "2026-11-03");
+  page.close();
+  page = await boot(appState({ sources: [source("a", leads)], settings: { dateFormat: "relative" } }));
+  assert.match(row(page, "A").querySelector(".col-lastFollowedUp").textContent, /days ago$/);
+});
+
+test("density, text size and hidden columns are applied to the page", async () => {
+  page = await boot(appState({ settings: { density: "compact", fontSize: "large", hiddenColumns: ["priority", "action"], overdueColor: "#aa0000" } }));
+  const root = page.document.documentElement;
+  assert.equal(root.dataset.density, "compact");
+  assert.equal(root.dataset.font, "large");
+  assert.equal(root.dataset.hide, "priority action");
+  assert.equal(root.style.getPropertyValue("--overdue-custom"), "#aa0000");
+  // Remembered for the next page load's first paint.
+  assert.deepEqual(JSON.parse(page.window.localStorage.getItem("look")).data, { overdue: "custom", density: "compact", font: "large", hide: "priority action" });
+});
+
+test("unticking a column in Settings saves it as hidden", async () => {
+  page = await boot(appState(), { "PATCH /api/settings": (body) => ({ ...appState().settings, ...body }) });
+  page.$("#settings-btn").click();
+  const box = page.$('[data-column="status"]');
+  assert.equal(box.checked, true);
+  box.checked = false;
+  box.dispatchEvent(new page.window.Event("change"));
+  await page.settle();
+  assert.deepEqual(page.requests.at(-1).body, { hiddenColumns: ["status"] });
+  assert.equal(page.document.documentElement.dataset.hide, "status");
+});
+
+test("Show closed and sections start the way Settings says", async () => {
+  const leads = [lead({ businessName: "Live" }), lead({ businessName: "Done", followUpStatus: "Closed - interested" })];
+  page = await boot(appState({ sources: [source("a", leads)], settings: { showClosedDefault: true, sectionsStart: "collapsed" } }));
+  assert.equal(page.$("#show-closed").checked, true);
+  assert.deepEqual(names(page).sort(), ["Done", "Live"]);
+  assert.ok(page.$("#sections .source").classList.contains("collapsed"));
+});
+
+test("a priority change offers Undo, which writes the old value back", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A", priority: 1 })])] }), PATCH_LEAD);
+  choose(page, row(page, "A").querySelector("select.priority"), "3");
+  await page.settle();
+  const undo = page.$("#toast .toast-action");
+  assert.equal(undo.textContent, "Undo");
+  undo.click();
+  await page.settle();
+  assert.deepEqual(page.requests.filter((r) => r.method === "PATCH").map((r) => r.body), [
+    { field: "priority", value: "3" },
+    { field: "priority", value: "1" },
+  ]);
+  assert.equal(row(page, "A").querySelector("select.priority").value, "1");
+});
+
+test("an undo window of 0 shows no Undo", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A" })])], settings: { undoSeconds: 0 } }), PATCH_LEAD);
+  choose(page, row(page, "A").querySelector("select.priority"), "3");
+  await page.settle();
+  assert.equal(page.$("#toast .toast-action"), null);
+});
+
+test("with Confirm before writing on, a declined bulk change writes nothing", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A" })])], settings: { confirmBulk: true } }), PATCH_LEAD);
+  let asked = "";
+  page.window.confirm = (msg) => ((asked = msg), false);
+  check(page, "A");
+  choose(page, page.$("#bulk-priority"), "3");
+  await page.settle();
+  assert.match(asked, /Priority 3 on 1 lead/);
+  assert.equal(page.requests.filter((r) => r.method === "PATCH").length, 0);
+});
+
+test("done toasts can be turned off; errors still show", async () => {
+  page = await boot(appState({ settings: { doneToasts: false } }), { "POST /api/sync": () => ({ ok: true }) });
+  page.$("#sync-btn").click();
+  await page.settle();
+  assert.equal(page.$("#toast").hidden, true);
+});
+
+test("auto-sync on page open syncs once", async () => {
+  page = await boot(appState({ settings: { autoSync: "open" } }), { "POST /api/sync": () => ({ ok: true }) });
+  assert.equal(page.requests.filter((r) => r.url === "/api/sync").length, 1);
+});
+
+test("timed auto-sync syncs when the last sync is older than the interval, and not otherwise", async () => {
+  const routes = { "POST /api/sync": () => ({ ok: true }) };
+  const stateWith = (at) => ({ ...appState({ settings: { autoSync: "15" } }), lastSync: { at, ok: true, apiCalls: 1 } });
+  page = await boot(stateWith(Date.now() - 20 * 60_000), routes);
+  assert.equal(page.requests.filter((r) => r.url === "/api/sync").length, 1);
+  page.close();
+  page = await boot(stateWith(Date.now() - 60_000), routes);
+  assert.equal(page.requests.filter((r) => r.url === "/api/sync").length, 0);
+});
+
+test("a toast without an Undo button has no stray text", async () => {
+  page = await boot(appState(), { "POST /api/sync": () => ({ ok: true }) });
+  page.$("#sync-btn").click();
+  await page.settle();
+  assert.doesNotMatch(page.$("#toast").textContent, /null/);
+});

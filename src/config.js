@@ -51,6 +51,45 @@ const DEFAULT_SETTINGS = {
   drafterModel: null,
   // How many leads one Claude call drafts at once.
   draftBatchSize: 8,
+  // The dashboard's color scheme (each has a light and a dark version), and
+  // an optional accent color that replaces the palette's buttons and links.
+  palette: "periwinkle",
+  accentColor: null,
+
+  // Follow-up timing: days since your last email (when you sent last) before
+  // a row reads as due soon, then overdue. "followUpBy": "priority" flags
+  // Follow up only for priority 3; "timing" also for rows past overdueDays.
+  dueSoonDays: 7,
+  overdueDays: 14,
+  followUpBy: "priority",
+  // "off", "open" (each time the page opens), or minutes between syncs
+  // while the page is open ("15", "60").
+  autoSync: "off",
+
+  // Drafting voice, sent to Claude with every batch. "" tone matches the thread.
+  draftTone: "",
+  draftSignOff: "",
+  draftAboutMe: "",
+
+  // Display.
+  density: "comfortable",
+  dateFormat: "both",
+  fontSize: "normal",
+  hiddenColumns: [],
+  overdueColor: null,
+  dueSoonColor: null,
+
+  // Behavior.
+  defaultSort: "action",
+  showClosedDefault: false,
+  sectionsStart: "remember",
+  toastSeconds: 6,
+  doneToasts: true,
+
+  // Safety.
+  confirmBulk: false,
+  // How long the Undo button stays on the toast after an edit; 0 turns it off.
+  undoSeconds: 10,
 };
 
 // A file that won't parse (cut off by a crash, or a bad hand edit) falls
@@ -102,6 +141,36 @@ export function loadSettings() {
 }
 
 export const DRAFTERS = ["claude-code", "api"];
+export const PALETTES = ["periwinkle", "ocean", "forest", "rose", "graphite"];
+export const AUTO_SYNC = ["off", "open", "15", "60"];
+export const TONES = ["", "friendly", "brief", "formal"];
+export const COLUMNS = ["action", "details", "lastEmail", "lastFollowedUp", "priority", "status"];
+export const SORTS = ["action", "priority", "lastEmail", "name"];
+
+const onOff = (key) => (v) => {
+  if (typeof v !== "boolean") throw new Error(`${key} must be on or off`);
+  return v;
+};
+const oneOf = (key, options) => (v) => {
+  if (!options.includes(v)) throw new Error(`${key} must be one of: ${options.join(", ")}`);
+  return v;
+};
+
+const wholeNumber = (label, min, max) => (v) => {
+  const n = Number(v);
+  if (v === "" || !Number.isInteger(n) || n < min || n > max) throw new Error(`${label} must be a whole number from ${min} to ${max}`);
+  return n;
+};
+const hexColor = (label) => (v) => {
+  const color = String(v ?? "").trim().toLowerCase();
+  if (color && !/^#[0-9a-f]{6}$/.test(color)) throw new Error(`${label} must be a hex color like #5b5fc7`);
+  return color || null;
+};
+const text = (label, max) => (v) => {
+  const t = String(v ?? "").trim();
+  if (t.length > max) throw new Error(`${label} can be at most ${max} characters`);
+  return t;
+};
 
 // Checks each setting the dashboard can change, returning the cleaned value.
 const SETTING_RULES = {
@@ -132,6 +201,31 @@ const SETTING_RULES = {
     if (!Number.isInteger(n) || n < 1024 || n > 65535) throw new Error("Port must be a whole number from 1024 to 65535");
     return n;
   },
+  palette: oneOf("palette", PALETTES),
+  accentColor: hexColor("Accent color"),
+  dueSoonDays: wholeNumber("Due soon", 1, 365),
+  overdueDays: wholeNumber("Overdue", 2, 366),
+  followUpBy: oneOf("followUpBy", ["priority", "timing"]),
+  autoSync: oneOf("autoSync", AUTO_SYNC),
+  draftTone: oneOf("draftTone", TONES),
+  draftSignOff: text("Sign-off", 200),
+  draftAboutMe: text("About me", 1000),
+  density: oneOf("density", ["comfortable", "compact"]),
+  dateFormat: oneOf("dateFormat", ["both", "relative", "absolute"]),
+  fontSize: oneOf("fontSize", ["small", "normal", "large"]),
+  hiddenColumns: (v) => {
+    if (!Array.isArray(v) || !v.every((c) => COLUMNS.includes(c))) throw new Error(`hiddenColumns must list some of: ${COLUMNS.join(", ")}`);
+    return [...new Set(v)];
+  },
+  overdueColor: hexColor("Overdue color"),
+  dueSoonColor: hexColor("Due soon color"),
+  defaultSort: oneOf("defaultSort", SORTS),
+  showClosedDefault: onOff("showClosedDefault"),
+  sectionsStart: oneOf("sectionsStart", ["remember", "expanded", "collapsed"]),
+  toastSeconds: wholeNumber("Toast duration", 2, 60),
+  doneToasts: onOff("doneToasts"),
+  confirmBulk: onOff("confirmBulk"),
+  undoSeconds: wholeNumber("Undo window", 0, 300),
 };
 
 // Applies `change` on top of what's in the file now (not the defaults), so
@@ -142,7 +236,10 @@ export function saveSettings(change) {
     if (!SETTING_RULES[key]) throw new Error(`"${key}" isn't a setting the dashboard can change`);
     clean[key] = SETTING_RULES[key](value);
   }
-  writeJsonAtomic(SETTINGS_PATH, { ...readJson(SETTINGS_PATH, {}), ...clean });
+  const saved = readJson(SETTINGS_PATH, {});
+  const next = { ...DEFAULT_SETTINGS, ...saved, ...clean };
+  if (next.overdueDays <= next.dueSoonDays) throw new Error(`Overdue must be more days than Due soon (${next.dueSoonDays})`);
+  writeJsonAtomic(SETTINGS_PATH, { ...saved, ...clean });
   return loadSettings();
 }
 

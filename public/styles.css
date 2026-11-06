@@ -116,6 +116,196 @@
   color-scheme: dark;
 }
 
+/* --- Palettes (Settings → Colors) ------------------------------------------
+   Periwinkle, above, is the default (no data-palette). Each palette lists its
+   light (--pl-*) and dark (--pd-*) values once; the rules after them map
+   whichever applies onto the tokens the page uses. */
+:root[data-palette="ocean"] {
+  --pl-bg: #f1f7fb;
+  --pl-surface: #ffffff;
+  --pl-s2: #e4eff6;
+  --pl-border: #d6e5ef;
+  --pl-text: #14263a;
+  --pl-muted: #557086;
+  --pl-accent: #1f6fa8;
+  --pl-at: #ffffff;
+  --pl-soft: #dcebf6;
+  --pl-topbar: #e2eef7;
+  --pl-hover: #f5f9fc;
+  --pl-u1: #6aa6d6;
+  --pl-u1bg: #ebf4fb;
+  --pd-bg: #0f1a24;
+  --pd-surface: #16232f;
+  --pd-s2: #1f3140;
+  --pd-border: #2a4152;
+  --pd-text: #e6eff6;
+  --pd-muted: #a3b9ca;
+  --pd-accent: #9fd0f5;
+  --pd-at: #0f1a24;
+  --pd-soft: #1d3446;
+  --pd-topbar: #172a39;
+  --pd-hover: #1b2b38;
+  --pd-u1: #7fb8e6;
+  --pd-u1bg: #1b2f40;
+}
+:root[data-palette="forest"] {
+  --pl-bg: #f3f7f2;
+  --pl-surface: #ffffff;
+  --pl-s2: #e6efe4;
+  --pl-border: #d9e5d6;
+  --pl-text: #1a2a1c;
+  --pl-muted: #5f735f;
+  --pl-accent: #2f7d4a;
+  --pl-at: #ffffff;
+  --pl-soft: #dff0e3;
+  --pl-topbar: #e4efe2;
+  --pl-hover: #f7faf6;
+  --pl-u1: #7fb38f;
+  --pl-u1bg: #edf6ef;
+  --pd-bg: #111a13;
+  --pd-surface: #18241a;
+  --pd-s2: #223324;
+  --pd-border: #2e4430;
+  --pd-text: #e7f1e8;
+  --pd-muted: #a9c2ac;
+  --pd-accent: #a6dcb4;
+  --pd-at: #102015;
+  --pd-soft: #1f3925;
+  --pd-topbar: #1a2c1d;
+  --pd-hover: #1d2c20;
+  --pd-u1: #86c497;
+  --pd-u1bg: #1e3424;
+}
+:root[data-palette="rose"] {
+  --pl-bg: #fbf3f5;
+  --pl-surface: #ffffff;
+  --pl-s2: #f5e6ea;
+  --pl-border: #eed8de;
+  --pl-text: #33161f;
+  --pl-muted: #87606b;
+  --pl-accent: #b83b62;
+  --pl-at: #ffffff;
+  --pl-soft: #f8e0e8;
+  --pl-topbar: #f7e5ea;
+  --pl-hover: #fdf8f9;
+  --pl-u1: #d98aa3;
+  --pl-u1bg: #fbeef2;
+  --pd-bg: #1f1217;
+  --pd-surface: #2a1820;
+  --pd-s2: #3a2229;
+  --pd-border: #4d2e38;
+  --pd-text: #f6e8ec;
+  --pd-muted: #d1aab5;
+  --pd-accent: #f5b3c7;
+  --pd-at: #2a1018;
+  --pd-soft: #45232f;
+  --pd-topbar: #321c25;
+  --pd-hover: #321d25;
+  --pd-u1: #e895ae;
+  --pd-u1bg: #3d2230;
+}
+:root[data-palette="graphite"] {
+  --pl-bg: #f4f4f5;
+  --pl-surface: #ffffff;
+  --pl-s2: #e9e9ec;
+  --pl-border: #dedee3;
+  --pl-text: #1b1b1f;
+  --pl-muted: #63636e;
+  --pl-accent: #3f3f4a;
+  --pl-at: #ffffff;
+  --pl-soft: #e6e6ea;
+  --pl-topbar: #eaeaed;
+  --pl-hover: #f8f8f9;
+  --pl-u1: #9a9aa6;
+  --pl-u1bg: #f0f0f2;
+  --pd-bg: #141416;
+  --pd-surface: #1c1c1f;
+  --pd-s2: #27272b;
+  --pd-border: #34343a;
+  --pd-text: #ececef;
+  --pd-muted: #b0b0b8;
+  --pd-accent: #e2e2e8;
+  --pd-at: #141416;
+  --pd-soft: #2c2c32;
+  --pd-topbar: #202024;
+  --pd-hover: #222226;
+  --pd-u1: #9d9da8;
+  --pd-u1bg: #26262b;
+}
+:root[data-palette] {
+  --bg: var(--pl-bg);
+  --surface: var(--pl-surface);
+  --surface-2: var(--pl-s2);
+  --border: var(--pl-border);
+  --text: var(--pl-text);
+  --muted: var(--pl-muted);
+  --accent: var(--pl-accent);
+  --accent-text: var(--pl-at);
+  --accent-soft: var(--pl-soft);
+  --topbar: var(--pl-topbar);
+  --row-hover: var(--pl-hover);
+  --u1: var(--pl-u1);
+  --u1-bg: var(--pl-u1bg);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-palette]:not([data-theme="light"]) {
+    --bg: var(--pd-bg);
+    --surface: var(--pd-surface);
+    --surface-2: var(--pd-s2);
+    --border: var(--pd-border);
+    --text: var(--pd-text);
+    --muted: var(--pd-muted);
+    --accent: var(--pd-accent);
+    --accent-text: var(--pd-at);
+    --accent-soft: var(--pd-soft);
+    --topbar: var(--pd-topbar);
+    --row-hover: var(--pd-hover);
+    --u1: var(--pd-u1);
+    --u1-bg: var(--pd-u1bg);
+  }
+}
+:root[data-palette][data-theme="dark"] {
+  --bg: var(--pd-bg);
+  --surface: var(--pd-surface);
+  --surface-2: var(--pd-s2);
+  --border: var(--pd-border);
+  --text: var(--pd-text);
+  --muted: var(--pd-muted);
+  --accent: var(--pd-accent);
+  --accent-text: var(--pd-at);
+  --accent-soft: var(--pd-soft);
+  --topbar: var(--pd-topbar);
+  --row-hover: var(--pd-hover);
+  --u1: var(--pd-u1);
+  --u1-bg: var(--pd-u1bg);
+}
+/* A custom accent (set inline by app.js as --accent-custom, with a text
+   color that reads on it) wins over the palette's. Dark mode lightens it so
+   it still stands out on a dark page. */
+:root[data-accent] {
+  --accent: var(--accent-custom);
+  --accent-text: var(--accent-custom-text);
+  --accent-soft: color-mix(in srgb, var(--accent-custom) 14%, var(--surface));
+  --u1: color-mix(in srgb, var(--accent-custom) 60%, var(--surface));
+  --u1-bg: color-mix(in srgb, var(--accent-custom) 8%, var(--surface));
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-accent]:not([data-theme="light"]) {
+    --accent: color-mix(in srgb, var(--accent-custom) 45%, #ffffff);
+    --accent-text: #15162a;
+    --accent-soft: color-mix(in srgb, var(--accent-custom) 25%, var(--surface));
+    --u1: color-mix(in srgb, var(--accent-custom) 55%, #ffffff);
+    --u1-bg: color-mix(in srgb, var(--accent-custom) 18%, var(--surface));
+  }
+}
+:root[data-accent][data-theme="dark"] {
+  --accent: color-mix(in srgb, var(--accent-custom) 45%, #ffffff);
+  --accent-text: #15162a;
+  --accent-soft: color-mix(in srgb, var(--accent-custom) 25%, var(--surface));
+  --u1: color-mix(in srgb, var(--accent-custom) 55%, #ffffff);
+  --u1-bg: color-mix(in srgb, var(--accent-custom) 18%, var(--surface));
+}
+
 * { box-sizing: border-box; }
 body {
   margin: 0;
@@ -453,10 +643,23 @@ button.alert { border-color: var(--danger); color: var(--danger); font-weight: 6
 .signin-who .sub { font-size: 12px; overflow-wrap: anywhere; }
 .signin .error { font-size: 13px; }
 
-.settings h3 { font-size: 13px; color: var(--muted); font-weight: 600; margin: 18px 0 4px; }
+.settings h3 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  background: var(--accent-soft);
+  margin: 36px 0 4px;
+  padding: 10px 14px;
+  border-left: 5px solid var(--accent);
+  border-radius: 6px;
+  line-height: 1.2;
+}
+.settings h3:first-child { margin-top: 12px; }
+.settings h3 + .setting { border-top: none; }
 .setting { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); cursor: pointer; }
 .setting-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
-.setting select, .setting input:not(.switch) { width: 180px; flex: none; }
+.setting > select, .setting > input:not(.switch):not([type="color"]) { width: 220px; flex: none; }
 .switch {
   appearance: none;
   flex: none;
@@ -486,7 +689,7 @@ button.alert { border-color: var(--danger); color: var(--danger); font-weight: 6
 .switch:disabled { opacity: 0.6; cursor: wait; }
 @media (max-width: 640px) {
   .setting { flex-wrap: wrap; }
-  .setting select, .setting input:not(.switch) { width: 100%; }
+  .setting > select, .setting > input:not(.switch):not([type="color"]) { width: 100%; }
 }
 
 .draft-card {
@@ -508,3 +711,111 @@ button.alert { border-color: var(--danger); color: var(--danger); font-weight: 6
   .toolbar input[type="search"] { width: 100%; }
   .source-head, .tab-head { flex-wrap: wrap; }
 }
+
+/* --- Display settings (Settings → Display) --------------------------------- */
+:root[data-font="small"] body { zoom: 0.9; }
+:root[data-font="large"] body { zoom: 1.15; }
+
+:root[data-density="compact"] th,
+:root[data-density="compact"] td { padding: 3px 10px; }
+:root[data-density="compact"] td select { padding-top: 2px; padding-bottom: 2px; }
+:root[data-density="compact"] tbody .sub { font-size: 11px; }
+
+/* Hidden columns: data-hide lists them, space-separated. */
+:root[data-hide~="action"] .col-action,
+:root[data-hide~="details"] .col-details,
+:root[data-hide~="lastEmail"] .col-lastEmail,
+:root[data-hide~="lastFollowedUp"] .col-lastFollowedUp,
+:root[data-hide~="priority"] .col-priority,
+:root[data-hide~="status"] .col-status { display: none; }
+
+/* Custom urgency colors, set inline by app.js as --overdue-custom and
+   --due-soon-custom. Dark mode lightens them, like the accent. */
+:root[data-overdue] {
+  --u3: var(--overdue-custom);
+  --u3-bg: color-mix(in srgb, var(--overdue-custom) 10%, var(--surface));
+  --very-stale: var(--overdue-custom);
+}
+:root[data-due-soon] {
+  --u2: var(--due-soon-custom);
+  --u2-bg: color-mix(in srgb, var(--due-soon-custom) 12%, var(--surface));
+  --stale: var(--due-soon-custom);
+}
+@media (prefers-color-scheme: dark) {
+  :root[data-overdue]:not([data-theme="light"]) {
+    --u3: color-mix(in srgb, var(--overdue-custom) 70%, #ffffff);
+    --u3-bg: color-mix(in srgb, var(--overdue-custom) 22%, var(--surface));
+    --very-stale: color-mix(in srgb, var(--overdue-custom) 60%, #ffffff);
+  }
+  :root[data-due-soon]:not([data-theme="light"]) {
+    --u2: color-mix(in srgb, var(--due-soon-custom) 70%, #ffffff);
+    --u2-bg: color-mix(in srgb, var(--due-soon-custom) 22%, var(--surface));
+    --stale: color-mix(in srgb, var(--due-soon-custom) 60%, #ffffff);
+  }
+}
+:root[data-overdue][data-theme="dark"] {
+  --u3: color-mix(in srgb, var(--overdue-custom) 70%, #ffffff);
+  --u3-bg: color-mix(in srgb, var(--overdue-custom) 22%, var(--surface));
+  --very-stale: color-mix(in srgb, var(--overdue-custom) 60%, #ffffff);
+}
+:root[data-due-soon][data-theme="dark"] {
+  --u2: color-mix(in srgb, var(--due-soon-custom) 70%, #ffffff);
+  --u2-bg: color-mix(in srgb, var(--due-soon-custom) 22%, var(--surface));
+  --stale: color-mix(in srgb, var(--due-soon-custom) 60%, #ffffff);
+}
+
+/* Settings controls added with the display/behavior settings. */
+.setting textarea { width: 260px; flex: none; resize: vertical; font: inherit; }
+.with-unit { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.setting .with-unit input { width: 90px; }
+.setting.columns { flex-wrap: wrap; cursor: default; }
+.column-picker { display: grid; grid-template-columns: repeat(3, max-content); gap: 6px 24px; width: 100%; }
+.column-picker .check { cursor: pointer; }
+
+/* A toast's action button (Undo). */
+.toast-action {
+  flex: none;
+  align-self: center;
+  background: transparent;
+  color: var(--toast-text);
+  border: 1px solid var(--toast-muted);
+  font-weight: 600;
+  padding: 3px 10px;
+}
+.toast-action:hover:not(:disabled) { background: color-mix(in srgb, var(--toast-text) 12%, transparent); }
+
+@media (max-width: 640px) {
+  .setting textarea, .setting .with-unit, .setting .with-unit input { width: 100%; }
+  .column-picker { grid-template-columns: 1fr 1fr; }
+}
+
+/* In-page color picker (Settings → Colors). Opens upward: Colors is the
+   last section, so there's room above it. */
+.color-setting { position: relative; flex: none; }
+.color-btn { display: inline-flex; align-items: center; gap: 8px; min-width: 130px; }
+.color-btn .swatch { width: 18px; height: 18px; border-radius: 4px; border: 1px solid rgba(0, 0, 0, 0.15); flex: none; }
+.color-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
+.color-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  width: 228px;
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px -6px rgba(0, 0, 0, 0.3);
+  cursor: default;
+}
+.color-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+.color-choice { width: 100%; aspect-ratio: 1; padding: 0; border-radius: 6px; border: 1px solid rgba(0, 0, 0, 0.15); }
+.color-choice:hover:not(:disabled) { filter: brightness(1.1); }
+.color-choice.on { outline: 2px solid var(--text); outline-offset: 2px; }
+.color-custom { display: flex; gap: 6px; }
+.color-hex { flex: 1 1 0; width: 0; min-width: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.color-error:empty { display: none; }
+.color-error { font-size: 12px; }
+.color-default { justify-self: start; }
