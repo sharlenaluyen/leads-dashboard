@@ -101,6 +101,19 @@ dropped.
 Send draft, Follow up (waiting, priority 3), First email, Waiting, No action
 (closed, confirmed or priority 0). Ties go by priority, then sheet row order.
 
+Each row's Next value comes from the first of these checks that matches:
+
+1. Closed, confirmed or priority 0 → **No action**
+2. They sent the last email and there's no draft → **Reply**
+3. A draft exists → **Send draft**
+4. No email history → **First email**
+5. Priority 3 → **Follow up**
+6. Anything else → **Waiting**
+
+Because the draft check runs before the history check, Send draft takes
+priority over First email. It also sorts higher, so rows with a draft ready
+show up first.
+
 The dashboard only checks for these; it never adds columns. A tab missing any
 of them is skipped and the dashboard lists exactly which headers to add. The
 header row can be any of the first 10 rows (it's the one with `email`).
