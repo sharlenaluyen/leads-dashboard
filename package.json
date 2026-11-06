@@ -19,5 +19,8 @@
     "google-mcp-accounts": "file:../google workspace mcp servers/google-mcp-accounts",
     "googleapis": "^188.0.0",
     "multi-gmail-mcp": "file:../google workspace mcp servers/multi-gmail-mcp"
+  },
+  "devDependencies": {
+    "jsdom": "^26.1.0"
   }
 }

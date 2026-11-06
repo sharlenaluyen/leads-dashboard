@@ -5,6 +5,7 @@ const isClosed = (status) => /^closed\b/i.test(String(status || "").trim());
 
 let state = null;
 const selected = new Set();
+let bulkBusy = false; // a selection-bar edit is running
 const collapsed = new Set(JSON.parse(safeGet("collapsed") || "[]"));
 
 function safeGet(key) {
@@ -798,6 +799,75 @@ function renderActionBar() {
   for (const id of selected) if (!ids.has(id)) selected.delete(id);
   $("#actionbar").hidden = selected.size === 0;
   $("#selected-count").textContent = `${selected.size} selected`;
+  renderBulkControls();
+}
+
+// --- Bulk edits from the selection bar ------------------------------------
+
+function selectedLeads() {
+  return state.sources.flatMap((s) => s.leads.filter((l) => selected.has(l.id)).map((lead) => ({ source: s, lead })));
+}
+
+function renderBulkControls() {
+  const writable = state.settings.writeBack;
+  const offTitle = writable ? undefined : "Writing to spreadsheets is turned off in Settings";
+  const picked = selectedLeads();
+
+  const priority = $("#bulk-priority");
+  priority.disabled = !writable || bulkBusy;
+  priority.title = offTitle || "";
+  priority.replaceChildren(
+    el("option", { value: "__", selected: true, disabled: true }, "Set priority…"),
+    ...[3, 2, 1, 0].map((p) => el("option", { value: String(p), title: state.priorityLabels[p] }, `${p} · ${SHORT_PRIORITY[p]}`)),
+    el("option", { value: "" }, "– Clear priority")
+  );
+
+  // Statuses are per source, so only offer ones every selected lead's
+  // source knows about.
+  const sources = [...new Set(picked.map((p) => p.source))];
+  let common = sources[0]?.statuses ?? [];
+  for (const s of sources.slice(1)) {
+    const names = new Set(s.statuses.map((st) => st.toLowerCase()));
+    common = common.filter((st) => names.has(st.toLowerCase()));
+  }
+  const status = $("#bulk-status");
+  status.disabled = !writable || bulkBusy;
+  status.title = offTitle || (sources.length > 1 ? "Showing statuses shared by all selected sheets" : "");
+  status.replaceChildren(
+    el("option", { value: "__", selected: true, disabled: true }, "Set status…"),
+    ...common.map((s) => el("option", { value: s }, s)),
+    el("option", { value: "" }, "– Clear status")
+  );
+}
+
+
+async function bulkSet(field, value) {
+  const picked = selectedLeads();
+  if (!picked.length) return;
+  const label = field === "priority" ? (value === "" ? "Cleared priority" : `Priority ${value}`) : value === "" ? "Cleared status" : `Status "${value}"`;
+  bulkBusy = true;
+  renderBulkControls();
+  toast(`Updating ${picked.length} lead${picked.length === 1 ? "" : "s"}…`, { kind: "busy", sticky: true });
+  const failed = [];
+  for (const { lead } of picked) {
+    try {
+      await api("PATCH", `/api/leads/${lead.id}`, { field, value });
+      if (field === "priority") lead.priority = value === "" ? null : Number(value);
+      if (field === "followUpStatus") lead.followUpStatus = value;
+    } catch (err) {
+      failed.push(`${lead.businessName || lead.email}: ${err.message}`);
+    }
+  }
+  bulkBusy = false;
+  transientBanner = null;
+  const done = picked.length - failed.length;
+  if (failed.length) {
+    toast(`${label}: ${done} updated, ${failed.length} failed`, { kind: "error", detail: failed.slice(0, 3).join(" · ") + (failed.length > 3 ? ` · +${failed.length - 3} more` : ""), sticky: true });
+    await load();
+  } else {
+    toast(`${label} set on ${done} lead${done === 1 ? "" : "s"}`, { kind: "done" });
+    render();
+  }
 }
 
 // --- Drafting -------------------------------------------------------------
@@ -1000,6 +1070,8 @@ $("#clear-selection").addEventListener("click", () => {
   selected.clear();
   render();
 });
+$("#bulk-priority").addEventListener("change", (e) => bulkSet("priority", e.target.value));
+$("#bulk-status").addEventListener("change", (e) => bulkSet("followUpStatus", e.target.value));
 $("#draft-btn").addEventListener("click", openDraftDialog);
 $("#draft-generate").addEventListener("click", generate);
 $("#add-source-btn").addEventListener("click", () => openSourceDialog());
