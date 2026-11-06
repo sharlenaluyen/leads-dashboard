@@ -384,11 +384,21 @@ call has server-side refusal fallback turned on.
 | `draftBatchSize` | `8` | Leads per Claude call |
 
 **The dashboard starts read-only.** `writeBack` and `createDrafts` are both
-off by default, and the checked-in `config/settings.json` keeps them off, so a
-fresh setup can sync and show your leads but never changes a spreadsheet or
-your Gmail. A banner at the top says what's turned off. Once you've checked
-that the dashboard reads your sheets correctly, switch them on in
-**Settings**.
+off by default, so a fresh setup can sync and show your leads but never
+changes a spreadsheet or your Gmail. A banner at the top says what's turned
+off. Once you've checked that the dashboard reads your sheets correctly,
+switch them on in **Settings**.
+
+`config/settings.json` holds your own choices, so it's gitignored and not in
+the repo. `config/settings.example.json` is the template: every setting at
+its default, with both write switches off. To start from it:
+
+```bash
+cp config/settings.example.json config/settings.json
+```
+
+You don't have to: with no `settings.json` the dashboard uses the same
+read-only defaults and creates the file the first time you change a setting.
 
 Change these from the **Settings** button in the dashboard, or by editing the
 file. The dashboard saves a change straight to the file, waits for a running

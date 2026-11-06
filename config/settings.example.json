@@ -1,6 +1,8 @@
 {
   "port": 3000,
   "drafter": "claude-code",
+  "drafterModel": null,
+  "draftBatchSize": 8,
   "writeBack": false,
   "createDrafts": false
 }

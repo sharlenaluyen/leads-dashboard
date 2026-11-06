@@ -4,3 +4,4 @@ data/
 config/*.bak
 config/*.tmp
 config/sources.json
+config/settings.json
