@@ -181,6 +181,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 }
 .banner.error { background: var(--danger-bg); color: var(--danger); }
 .banner.draft-off { margin: 0 0 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.banner.draft-off[hidden] { display: none; }
 .banner.draft-off p { margin: 0; flex: 1 1 260px; }
 .banner ul { margin: 4px 0 0; padding-left: 18px; }
 .banner.dismissible { display: flex; align-items: flex-start; gap: 8px; }
@@ -312,6 +313,14 @@ td select.saving { opacity: 0.6; }
 #new-contacts { padding: 8px 24px 0; }
 #new-contacts:empty { display: none; }
 .new-contacts .source-head { background: var(--turn-bg); }
+.starred .source-head { background: var(--u2-bg); }
+.starred .source-name { color: var(--warn-text); }
+.starred .tab-section.flat > .tab-head { display: none; }
+.biz-line { display: flex; align-items: baseline; gap: 2px; }
+button.star { border: none; background: none; padding: 0 4px 0 0; font-size: 16px; line-height: 1; color: var(--muted); cursor: pointer; }
+button.star:hover { color: var(--u2); }
+button.star.on { color: var(--u2); }
+.where { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-right: 6px; white-space: nowrap; }
 .new-contacts .source-name { color: var(--turn-text); }
 .new-contacts td input { width: 100%; min-width: 160px; }
 .row-actions { white-space: nowrap; }

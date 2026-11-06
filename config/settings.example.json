@@ -4,5 +4,9 @@
   "drafterModel": null,
   "draftBatchSize": 8,
   "writeBack": false,
-  "createDrafts": false
+  "createDrafts": false,
+  "showStarred": true,
+  "allowStarring": true,
+  "starMode": "duplicate",
+  "starredLayout": "tabs"
 }

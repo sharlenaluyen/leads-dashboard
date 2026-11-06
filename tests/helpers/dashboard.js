@@ -29,6 +29,7 @@ export function lead(overrides = {}) {
     lastEmailDir: null,
     lastFollowedUpAt: null,
     gmailChecked: true,
+    starred: false,
     ...overrides,
   };
 }
@@ -56,7 +57,7 @@ export function appState({ sources = [], settings = {} } = {}) {
     accounts: [{ alias: "work", email: "me@example.com" }],
     newContacts: [],
     lastSync: null,
-    settings: { writeBack: true, createDrafts: true, drafter: "api", drafterModel: "", draftBatchSize: 5, ...settings },
+    settings: { writeBack: true, createDrafts: true, drafter: "api", drafterModel: "", draftBatchSize: 5, showStarred: true, allowStarring: true, starMode: "duplicate", starredLayout: "tabs", ...settings },
   };
 }
 
