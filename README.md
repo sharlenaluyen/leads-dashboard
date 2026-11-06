@@ -185,7 +185,7 @@ written to the sheet as usual. Five settings (**Settings → Starred**) shape it
 
 | Setting | Key | Default | |
 | --- | --- | --- | --- |
-| Show Starred section | `showStarred` | on | Shows the section, even when nothing is starred. |
+| Show Starred section | `showStarred` | on | Shows the section, even when nothing is starred. While it's off, the settings below are greyed out. |
 | Allow starring | `allowStarring` | on | Shows the ☆ on every row. Off hides them; stars already set stay. |
 | Starring a row | `starMode` | `"duplicate"` | `"duplicate"`: the row shows in Starred and in its own section. `"move"`: only in Starred. Move only applies while Starred is shown, so a row is never hidden everywhere. |
 | Starred rows are grouped | `starredLayout` | `"tabs"` | `"tabs"`: one subsection per sheet tab, like other sections. `"labels"`: one list, with a **Section · Tab** column left of Business. |

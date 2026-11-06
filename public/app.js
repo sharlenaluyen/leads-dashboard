@@ -588,6 +588,9 @@ function renderSignins(signins) {
 
 const settingInputs = () => [...$("#settings-dialog").querySelectorAll("[data-setting]")];
 
+// The other Starred settings only matter while the section is shown.
+const STARRED_SUBSETTINGS = ["allowStarring", "starMode", "starredLayout", "starredColor"];
+
 function settingValue(input) {
   return input.type === "checkbox" ? input.checked : input.value;
 }
@@ -603,6 +606,12 @@ function renderSettings() {
         input.append(el("option", { value }, value));
       }
       input.value = value;
+    }
+    if (STARRED_SUBSETTINGS.includes(input.dataset.setting)) {
+      input.disabled = !s.showStarred;
+      const row = input.closest(".setting");
+      row.classList.toggle("disabled", !s.showStarred);
+      row.title = s.showStarred ? "" : "Turn on Show Starred section to change this";
     }
   }
   $("#port-note").textContent = s.port === s.runningPort

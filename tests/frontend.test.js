@@ -469,3 +469,18 @@ test("ticking a row in Starred ticks its copy in the section too", async () => {
   assert.equal(page.$("#selected-count").textContent, "1 selected");
   assert.ok(page.$$("td.cb input").every((cb) => cb.checked));
 });
+
+test("turning off Show Starred section greys out the other Starred settings", async () => {
+  const st = appState({ sources: [source("a", [lead()])], settings: { showStarred: false } });
+  page = await boot(st, { "PATCH /api/settings": (body) => ({ ...st.settings, ...body }) });
+  page.$("#settings-btn").click();
+  const sub = ["allowStarring", "starMode", "starredLayout", "starredColor"].map((k) => page.$(`[data-setting="${k}"]`));
+  assert.ok(sub.every((input) => input.disabled && input.closest(".setting").classList.contains("disabled")));
+  assert.equal(page.$('[data-setting="showStarred"]').disabled, false);
+
+  const show = page.$('[data-setting="showStarred"]');
+  show.checked = true;
+  show.dispatchEvent(new page.window.Event("change"));
+  await page.settle();
+  assert.ok(sub.every((input) => !input.disabled && !input.closest(".setting").classList.contains("disabled")));
+});
