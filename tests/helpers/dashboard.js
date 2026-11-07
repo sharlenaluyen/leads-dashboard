@@ -29,6 +29,7 @@ export function lead(overrides = {}) {
     lastEmailDir: null,
     lastFollowedUpAt: null,
     gmailChecked: true,
+    starred: false,
     ...overrides,
   };
 }
@@ -62,6 +63,7 @@ export function appState({ sources = [], settings = {} } = {}) {
       density: "comfortable", dateFormat: "both", fontSize: "normal", hiddenColumns: [], overdueColor: "", dueSoonColor: "",
       defaultSort: "action", showClosedDefault: false, sectionsStart: "remember", toastSeconds: 6, doneToasts: true,
       confirmBulk: false, undoSeconds: 10,
+      showStarred: true, allowStarring: true, starMode: "duplicate", starredLayout: "tabs", starredColor: "default",
       ...settings },
   };
 }

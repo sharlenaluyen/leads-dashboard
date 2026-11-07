@@ -5,6 +5,7 @@ import { fileURLToPath } from "url";
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SETTINGS_PATH = path.join(ROOT, "config", "settings.json");
 const SOURCES_PATH = path.join(ROOT, "config", "sources.json");
+const STARS_PATH = path.join(ROOT, "config", "stars.json");
 // Written by a running server (npm start / npm run dev), so npm run rebuild
 // can refuse to delete the database out from under it.
 export const SERVER_PID_PATH = path.join(ROOT, "data", "server.pid");
@@ -90,6 +91,17 @@ const DEFAULT_SETTINGS = {
   confirmBulk: false,
   // How long the Undo button stays on the toast after an edit; 0 turns it off.
   undoSeconds: 10,
+  // The Starred section at the top of the dashboard (see loadStars).
+  showStarred: true,
+  allowStarring: true,
+  // "duplicate": a starred row shows in Starred and its own section;
+  // "move": only in Starred.
+  starMode: "duplicate",
+  // "tabs": Starred groups rows into one subsection per sheet tab;
+  // "labels": one list, each row labelled with its section and tab.
+  starredLayout: "tabs",
+  // Header color of the Starred section; "default" matches the other sections.
+  starredColor: "default",
 };
 
 // A file that won't parse (cut off by a crash, or a bad hand edit) falls
@@ -141,6 +153,9 @@ export function loadSettings() {
 }
 
 export const DRAFTERS = ["claude-code", "api"];
+export const STAR_MODES = ["duplicate", "move"];
+export const STARRED_LAYOUTS = ["tabs", "labels"];
+export const STARRED_COLORS = ["default", "amber", "green", "rose", "slate"];
 export const PALETTES = ["periwinkle", "ocean", "forest", "rose", "graphite"];
 export const AUTO_SYNC = ["off", "open", "15", "60"];
 export const TONES = ["", "friendly", "brief", "formal"];
@@ -201,6 +216,11 @@ const SETTING_RULES = {
     if (!Number.isInteger(n) || n < 1024 || n > 65535) throw new Error("Port must be a whole number from 1024 to 65535");
     return n;
   },
+  showStarred: onOff("showStarred"),
+  allowStarring: onOff("allowStarring"),
+  starMode: oneOf("starMode", STAR_MODES),
+  starredLayout: oneOf("starredLayout", STARRED_LAYOUTS),
+  starredColor: oneOf("starredColor", STARRED_COLORS),
   palette: oneOf("palette", PALETTES),
   accentColor: hexColor("Accent color"),
   dueSoonDays: wholeNumber("Due soon", 1, 365),
@@ -297,4 +317,28 @@ export function addCustomStatuses(id, names) {
 
 export function statusesFor(source) {
   return [...BUILT_IN_STATUSES, ...(source.customStatuses || [])];
+}
+
+// Stars are the dashboard's own marks, never written to a spreadsheet. They
+// live in config/ rather than SQLite so a rebuild doesn't lose them, and are
+// keyed the way a row is identified (section, tab, first email), not by the
+// cache's row id, which changes on a rebuild.
+// Shape: [{ source, tab, email }]
+export function loadStars() {
+  return readJson(STARS_PATH, []);
+}
+
+export const starKey = (source, tab, email) => JSON.stringify([source, tab, String(email).toLowerCase()]);
+
+export function setStar({ source, tab, email }, starred) {
+  const key = starKey(source, tab, email);
+  const others = loadStars().filter((s) => starKey(s.source, s.tab, s.email) !== key);
+  writeJsonAtomic(STARS_PATH, starred ? [...others, { source, tab, email: String(email).toLowerCase() }] : others);
+}
+
+// Drops every star in a section, when the section is removed.
+export function dropStarsFor(sourceId) {
+  const stars = loadStars();
+  const kept = stars.filter((s) => s.source !== sourceId);
+  if (kept.length !== stars.length) writeJsonAtomic(STARS_PATH, kept);
 }

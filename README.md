@@ -169,6 +169,28 @@ tabs in the spreadsheet. Click any section or tab header to open or close it.
 Drag a section by its header (or focus its ⠿ handle and press Alt+↑/↓) to
 reorder; the order is saved in `config/sources.json`.
 
+## Starred
+
+Click ☆ next to any business to pin that row to a **Starred** section at the
+top of the dashboard; click ★ to unstar it. Stars are the dashboard's own:
+nothing is written to the spreadsheet. They're saved in `config/stars.json`
+(gitignored, like `sources.json`), keyed by section, tab and the row's first
+email, so they survive `npm run rebuild` and sorting the sheet. Removing a
+section drops its stars; deleting a row's email unstars it until that email
+is back.
+
+Starred works like the other sections: the filters apply, rows sort the same
+way, rows can be ticked for drafting, and edits to priority or status are
+written to the sheet as usual. Five settings (**Settings → Starred**) shape it:
+
+| Setting | Key | Default | |
+| --- | --- | --- | --- |
+| Show Starred section | `showStarred` | on | Shows the section, even when nothing is starred. While it's off, the settings below are greyed out. |
+| Allow starring | `allowStarring` | on | Shows the ☆ on every row. Off hides them; stars already set stay. |
+| Starring a row | `starMode` | `"duplicate"` | `"duplicate"`: the row shows in Starred and in its own section. `"move"`: only in Starred. Move only applies while Starred is shown, so a row is never hidden everywhere. |
+| Starred rows are grouped | `starredLayout` | `"tabs"` | `"tabs"`: one subsection per sheet tab, like other sections. `"labels"`: one list, with a **Section · Tab** column left of Business. |
+| Starred color | `starredColor` | `"default"` | The section's header color. `"default"` matches the other sections; or `"amber"`, `"green"`, `"rose"`, `"slate"`. |
+
 ## Sync
 
 **Sync** does three things in order:
@@ -408,6 +430,11 @@ call has server-side refusal fallback turned on.
 | `doneToasts` | `true` | Off hides "done" confirmations; errors, progress and Undo still show |
 | `confirmBulk` | `false` | Ask before a bulk priority/status change and before Save all to Gmail drafts |
 | `undoSeconds` | `10` | How long Undo stays on the toast after a priority/status change (0–300; 0 turns it off) |
+| `showStarred` | `true` | Show the Starred section (see [Starred](#starred)) |
+| `allowStarring` | `true` | Show the ☆ on every row |
+| `starMode` | `"duplicate"` | or `"move"` |
+| `starredLayout` | `"tabs"` | or `"labels"` |
+| `starredColor` | `"default"` | or `"amber"`, `"green"`, `"rose"`, `"slate"` |
 
 **The dashboard starts read-only.** `writeBack` and `createDrafts` are both
 off by default, so a fresh setup can sync and show your leads but never

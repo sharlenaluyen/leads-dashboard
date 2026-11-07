@@ -63,6 +63,7 @@
     <span><i style="background: var(--turn-text)"></i>They replied: your turn</span>
   </div>
 
+  <div id="starred"></div>
   <div id="new-contacts"></div>
   <main id="sections"></main>
 
@@ -157,6 +158,40 @@
       <label class="setting">
         <span class="setting-text"><strong>Save Gmail drafts</strong><span class="sub">Lets you save Claude's drafts to Gmail. Nothing is ever sent.</span></span>
         <input type="checkbox" class="switch" data-setting="createDrafts">
+      </label>
+
+      <h3>Starred</h3>
+      <label class="setting">
+        <span class="setting-text"><strong>Show Starred section</strong><span class="sub">At the top of the dashboard, even when nothing is starred. Stars live in the dashboard only; the spreadsheet is never changed.</span></span>
+        <input type="checkbox" class="switch" data-setting="showStarred">
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Allow starring</strong><span class="sub">Shows the ☆ next to every row. Off hides the stars; rows already starred stay starred.</span></span>
+        <input type="checkbox" class="switch" data-setting="allowStarring">
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Starring a row</strong><span class="sub">Move only applies while the Starred section is shown, so a starred row is never hidden everywhere.</span></span>
+        <select data-setting="starMode">
+          <option value="duplicate">Copies it to Starred</option>
+          <option value="move">Moves it to Starred</option>
+        </select>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Starred rows are grouped</strong><span class="sub">Tabs: one subsection per sheet tab, like other sections. Labels: one list, each row labelled with its section and tab.</span></span>
+        <select data-setting="starredLayout">
+          <option value="tabs">Into tabs</option>
+          <option value="labels">In one list, with labels</option>
+        </select>
+      </label>
+      <label class="setting">
+        <span class="setting-text"><strong>Starred color</strong><span class="sub">The Starred section's header. Default matches the other sections.</span></span>
+        <select data-setting="starredColor">
+          <option value="default">Same as other sections</option>
+          <option value="amber">Amber</option>
+          <option value="green">Green</option>
+          <option value="rose">Rose</option>
+          <option value="slate">Slate</option>
+        </select>
       </label>
 
       <h3>Safety</h3>

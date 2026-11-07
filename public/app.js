@@ -427,8 +427,78 @@ function render() {
   }
   const f = filters();
   for (const source of state.sources) main.append(renderSource(source, f));
+  renderStarred(f);
   renderNewContacts();
   renderActionBar();
+}
+
+// --- Starred ----------------------------------------------------------------
+
+// Stars are the dashboard's own marks (config/stars.json); the sheet never
+// sees them. In "move" mode a starred row leaves its own section, but only
+// while Starred is shown, so it can't end up hidden everywhere.
+const movesStarred = () => state.settings.showStarred && state.settings.starMode === "move";
+
+function renderStarred(f) {
+  const box = $("#starred");
+  box.replaceChildren();
+  if (!state.settings.showStarred) return;
+  const entries = state.sources.flatMap((source) => source.leads.filter((l) => l.starred).map((lead) => ({ source, lead })));
+  const counts = el("span", { class: "counts" });
+  const head = el(
+    "header",
+    { class: "source-head", title: "Click to open or close" },
+    el("button", { class: "collapse icon", "aria-label": "Open or close Starred" }, "▾"),
+    el("h2", { class: "source-name" }, "★ Starred"),
+    el("span", { class: "source-meta muted" }, `${entries.length} row${entries.length === 1 ? "" : "s"} · kept in the dashboard, not the spreadsheet`),
+    el("span", { class: "spacer" }),
+    counts
+  );
+  const body = el("div", { class: "tabs" });
+  const color = state.settings.starredColor;
+  const node = el("section", { class: `source starred${color && color !== "default" ? ` c-${color}` : ""}` }, head, body);
+  renderCounts(counts, entries.map((e) => e.lead));
+  makeCollapsible(node, head, "__starred");
+
+  if (!entries.length) {
+    body.append(
+      el(
+        "p",
+        { class: "empty muted" },
+        state.settings.allowStarring ? "Nothing starred yet. Click ☆ next to a business to pin it here." : "Nothing starred yet. Turn on Allow starring in Settings to star rows."
+      )
+    );
+  } else if (state.settings.starredLayout === "labels") {
+    body.append(leadSubsection("", "", entries, f, { flat: true, label: true }));
+  } else {
+    // One subsection per sheet tab, in section order, then tab order.
+    for (const source of state.sources) {
+      const tabs = [...source.tabs];
+      for (const e of entries) if (e.source === source && !tabs.includes(e.lead.tab)) tabs.push(e.lead.tab);
+      for (const tab of tabs) {
+        const group = entries.filter((e) => e.source === source && e.lead.tab === tab);
+        if (group.length) body.append(leadSubsection(`__starred\u0000${source.id}\u0000${tab}`, `${source.name} · ${tab}`, group, f, { meta: `${group.length} row${group.length === 1 ? "" : "s"}` }));
+      }
+    }
+  }
+  box.append(node);
+}
+
+async function toggleStar(lead, btn) {
+  const starred = !lead.starred;
+  btn.disabled = true;
+  try {
+    await api("PUT", `/api/leads/${lead.id}/star`, { starred });
+    lead.starred = starred;
+    transientBanner = null;
+    if (movesStarred()) {
+      const name = lead.businessName || lead.email;
+      toast(starred ? `Moved ${name} to Starred` : `Moved ${name} back to ${lead.tab}`, { kind: "done" });
+    }
+  } catch (err) {
+    showBanner(err.message, true);
+  }
+  render();
 }
 
 // --- People not in any sheet ----------------------------------------------
@@ -655,6 +725,9 @@ function renderSignins(signins) {
 const settingInputs = () => [...$("#settings-dialog").querySelectorAll("[data-setting]")];
 const columnBoxes = () => [...$("#column-picker").querySelectorAll("[data-column]")];
 
+// The other Starred settings only matter while the section is shown.
+const STARRED_SUBSETTINGS = ["allowStarring", "starMode", "starredLayout", "starredColor"];
+
 function settingValue(input) {
   return input.type === "checkbox" ? input.checked : input.value;
 }
@@ -670,6 +743,12 @@ function renderSettings() {
         input.append(el("option", { value }, value));
       }
       input.value = value;
+    }
+    if (STARRED_SUBSETTINGS.includes(input.dataset.setting)) {
+      input.disabled = !s.showStarred;
+      const row = input.closest(".setting");
+      row.classList.toggle("disabled", !s.showStarred);
+      row.title = s.showStarred ? "" : "Turn on Show Starred section to change this";
     }
   }
   for (const wrap of colorSettings()) {
@@ -867,7 +946,9 @@ function renderSource(source, f) {
   $(".source-meta", node).textContent = `${account?.email || source.account} · ${tabCount} tab${tabCount === 1 ? "" : "s"}`;
   $(".edit-source", node).addEventListener("click", () => openSourceDialog(source));
   wireReorder(node, head);
-  renderCounts($(".counts", node), source.leads);
+  // In move mode, starred rows show only in Starred.
+  const leads = movesStarred() ? source.leads.filter((l) => !l.starred) : source.leads;
+  renderCounts($(".counts", node), leads);
 
   // One subsection per tab, in the order the tabs sit in the spreadsheet
   // (source.tabs is saved in sheet order). Any cached rows from a tab that's
@@ -875,18 +956,16 @@ function renderSource(source, f) {
   const tabs = [...source.tabs];
   for (const l of source.leads) if (!tabs.includes(l.tab)) tabs.push(l.tab);
   const box = $(".tabs", node);
-  for (const tab of tabs) box.append(renderTab(source, tab, f));
+  for (const tab of tabs) box.append(renderTab(source, tab, f, leads));
   return node;
 }
 
-function renderTab(source, tab, f) {
-  const node = $("#tab-tpl").content.firstElementChild.cloneNode(true);
-  makeCollapsible(node, $(".tab-head", node), `${source.id}\u0000${tab}`);
-  $(".tab-name", node).textContent = tab;
-  const all = source.leads.filter((l) => l.tab === tab);
+function renderTab(source, tab, f, sourceLeads) {
+  const all = sourceLeads.filter((l) => l.tab === tab);
+  const moved = source.leads.filter((l) => l.tab === tab).length - all.length;
   const ts = source.tabState.find((t) => t.tab === tab);
-  $(".tab-meta", node).textContent = ts?.ok ? `${all.length} row${all.length === 1 ? "" : "s"}` : "";
-  renderCounts($(".counts", node), all);
+  const meta = ts?.ok ? `${all.length} row${all.length === 1 ? "" : "s"}${moved ? ` · ${moved} in Starred` : ""}` : "";
+  const node = leadSubsection(`${source.id}\u0000${tab}`, tab, all.map((lead) => ({ source, lead })), f, { meta });
 
   const problems = $(".tab-problems", node);
   if (ts && !ts.ok) {
@@ -897,21 +976,38 @@ function renderTab(source, tab, f) {
   }
   else if (ts?.problem) problems.append(dismissibleBanner(`${ts.problem}.`));
 
-  const leads = all
-    .filter((l) => (f.status === "__none" ? !l.followUpStatus && matches(l, { ...f, status: "" }) : matches(l, f)))
-    .sort(compareLeads);
-  const tbody = $("tbody", node);
-  for (const lead of leads) tbody.append(renderRow(source, lead));
-  $(".table-wrap", node).hidden = leads.length === 0;
   const empty = $(".empty", node);
-  empty.hidden = leads.length > 0 || (ts && !ts.ok);
-  if (!all.length) empty.textContent = ts ? "No rows with an email yet." : "Not synced yet. Click Sync.";
+  if (ts && !ts.ok) empty.hidden = true;
+  if (!all.length) empty.textContent = moved ? "Every row in this tab is starred." : ts ? "No rows with an email yet." : "Not synced yet. Click Sync.";
+  return node;
+}
+
+// One table of rows: a sheet tab in a section, or a group in Starred.
+// entries: [{ source, lead }]. `flat` drops the header (Starred's single
+// list); `label` tags each row with its section and tab.
+function leadSubsection(key, title, entries, f, { meta = "", flat = false, label = false } = {}) {
+  const node = $("#tab-tpl").content.firstElementChild.cloneNode(true);
+  if (flat) node.classList.add("flat");
+  else makeCollapsible(node, $(".tab-head", node), key);
+  $(".tab-name", node).textContent = title;
+  $(".tab-meta", node).textContent = meta;
+  renderCounts($(".counts", node), entries.map((e) => e.lead));
+  // A "Section · Tab" column left of Business, for Starred's single list.
+  if (label) $("thead th:nth-child(3)", node).before(el("th", {}, "Section · Tab"));
+
+  const shown = entries
+    .filter(({ lead: l }) => (f.status === "__none" ? !l.followUpStatus && matches(l, { ...f, status: "" }) : matches(l, f)))
+    .sort((a, b) => compareLeads(a.lead, b.lead));
+  const tbody = $("tbody", node);
+  for (const e of shown) tbody.append(renderRow(e.source, e.lead, { label }));
+  $(".table-wrap", node).hidden = shown.length === 0;
+  $(".empty", node).hidden = shown.length > 0;
 
   const selectAll = $(".select-all", node);
   widenHitArea(selectAll);
-  selectAll.checked = leads.length > 0 && leads.every((l) => selected.has(l.id));
+  selectAll.checked = shown.length > 0 && shown.every((e) => selected.has(e.lead.id));
   selectAll.addEventListener("change", () => {
-    for (const l of leads) selectAll.checked ? selected.add(l.id) : selected.delete(l.id);
+    for (const { lead } of shown) selectAll.checked ? selected.add(lead.id) : selected.delete(lead.id);
     render();
   });
   return node;
@@ -983,7 +1079,7 @@ function isoDate(ms) {
 }
 const showDate = (ms) => ({ relative: ago, absolute: isoDate }[state.settings.dateFormat] || fmtDate)(ms);
 
-function renderRow(source, lead) {
+function renderRow(source, lead, { label = false } = {}) {
   const writable = state.settings.writeBack;
   const offTitle = writable ? undefined : "Writing to spreadsheets is turned off in Settings";
 
@@ -1031,8 +1127,21 @@ function renderRow(source, lead) {
   const cb = el("input", { type: "checkbox", "aria-label": `Select ${lead.businessName || lead.email}`, checked: selected.has(lead.id) });
   cb.addEventListener("change", () => {
     cb.checked ? selected.add(lead.id) : selected.delete(lead.id);
-    renderActionBar();
+    // A row copied into Starred has a second checkbox to keep in step.
+    if (lead.starred && state.settings.showStarred && !movesStarred()) render();
+    else renderActionBar();
   });
+
+  const name = lead.businessName || lead.email;
+  let star = null;
+  if (state.settings.allowStarring) {
+    star = el(
+      "button",
+      { class: `star${lead.starred ? " on" : ""}`, type: "button", "aria-pressed": String(Boolean(lead.starred)), "aria-label": `${lead.starred ? "Unstar" : "Star"} ${name}`, title: lead.starred ? "Unstar" : "Star: pin to the Starred section" },
+      lead.starred ? "★" : "☆"
+    );
+    star.addEventListener("click", () => toggleStar(lead, star));
+  }
 
   const action = nextAction(lead);
 
@@ -1041,11 +1150,12 @@ function renderRow(source, lead) {
     { class: [isClosed(lead.followUpStatus) && "closed", lead.priority != null && `urg-${lead.priority}`].filter(Boolean).join(" ") },
     widenHitArea(cb, el("td", { class: "cb" }, cb)),
     el("td", { class: "col-action" }, el("span", { class: `action a-${action.key}`, title: action.title }, action.label)),
+    label ? el("td", { class: "where-cell" }, el("span", { class: "where", title: `${source.name} · ${lead.tab}` }, el("span", { class: "where-source" }, source.name), el("span", { class: "where-tab" }, lead.tab))) : null,
     el(
       "td",
       {},
-      el("div", { class: "biz" }, lead.businessName || lead.email, lead.draftId ? el("span", { class: "draft-flag", title: `Gmail draft ${lead.draftId}` }, "draft") : null),
-      el("div", { class: "sub col-details" }, `${lead.emails.join(", ")} · ${lead.tab}`)
+      el("div", { class: "biz-line" }, star, el("div", { class: "biz" }, name, lead.draftId ? el("span", { class: "draft-flag", title: `Gmail draft ${lead.draftId}` }, "draft") : null)),
+      el("div", { class: "sub col-details" }, label ? lead.emails.join(", ") : `${lead.emails.join(", ")} · ${lead.tab}`)
     ),
     lastCell,
     el("td", { class: "when col-lastFollowedUp" }, lead.lastFollowedUpAt ? showDate(lead.lastFollowedUpAt) : el("span", { class: "muted" }, "–")),

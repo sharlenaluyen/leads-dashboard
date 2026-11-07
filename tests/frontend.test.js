@@ -553,3 +553,139 @@ test("a toast without an Undo button has no stray text", async () => {
   await page.settle();
   assert.doesNotMatch(page.$("#toast").textContent, /null/);
 });
+
+// --- Starred -------------------------------------------------------------------
+
+const bizIn = (p, sel) => [...p.$(sel).querySelectorAll("tbody tr .biz")].map((n) => n.firstChild.textContent);
+const starredNames = (p) => bizIn(p, "#starred");
+const sectionNames = (p) => bizIn(p, "#sections");
+const starButton = (p, businessName) => row(p, businessName)?.querySelector("button.star");
+
+test("starring a row saves only the star and copies the row into Starred", async () => {
+  const leads = [lead({ businessName: "A" }), lead({ businessName: "B" })];
+  page = await boot(appState({ sources: [source("a", leads)] }), { "PUT /api/leads/:id/star": (body) => body });
+  assert.deepEqual(starredNames(page), []);
+  assert.match(page.$("#starred").textContent, /Nothing starred yet/);
+  starButton(page, "B").click();
+  await page.settle();
+  const req = page.requests.find((r) => r.method === "PUT");
+  assert.equal(req.url, `/api/leads/${leads[1].id}/star`);
+  assert.deepEqual(req.body, { starred: true });
+  assert.ok(!page.requests.some((r) => r.method === "PATCH"), "nothing is written to the sheet");
+  assert.deepEqual(starredNames(page), ["B"]);
+  assert.deepEqual(sectionNames(page).sort(), ["A", "B"]);
+  assert.equal(starButton(page, "B").getAttribute("aria-pressed"), "true");
+});
+
+test("unstarring takes the row out of Starred", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A", starred: true })])] }), { "PUT /api/leads/:id/star": (body) => body });
+  assert.deepEqual(starredNames(page), ["A"]);
+  starButton(page, "A").click();
+  await page.settle();
+  assert.deepEqual(page.requests.find((r) => r.method === "PUT").body, { starred: false });
+  assert.deepEqual(starredNames(page), []);
+});
+
+test("in move mode a starred row shows only in Starred", async () => {
+  const leads = [lead({ businessName: "A", starred: true }), lead({ businessName: "B" })];
+  page = await boot(appState({ sources: [source("a", leads)], settings: { starMode: "move" } }));
+  assert.deepEqual(starredNames(page), ["A"]);
+  assert.deepEqual(sectionNames(page), ["B"]);
+  assert.match(page.$("#sections .tab-meta").textContent, /1 in Starred/);
+});
+
+test("move mode keeps rows in their section while Starred is hidden", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A", starred: true })])], settings: { starMode: "move", showStarred: false } }));
+  assert.equal(page.$("#starred").children.length, 0);
+  assert.deepEqual(sectionNames(page), ["A"]);
+});
+
+test("Show Starred section off hides it; on shows it even when empty", async () => {
+  page = await boot(appState({ sources: [source("a", [lead()])], settings: { showStarred: false } }));
+  assert.equal(page.$("#starred").children.length, 0);
+  page.close();
+  page = await boot(appState({ sources: [source("a", [lead()])] }));
+  assert.ok(page.$("#starred .starred"));
+});
+
+test("Allow starring off hides every star, but starred rows stay in Starred", async () => {
+  const leads = [lead({ businessName: "A", starred: true }), lead({ businessName: "B" })];
+  page = await boot(appState({ sources: [source("a", leads)], settings: { allowStarring: false } }));
+  assert.equal(page.$$("button.star").length, 0);
+  assert.deepEqual(starredNames(page), ["A"]);
+});
+
+test("Starred groups rows by sheet tab, or lists them with labels", async () => {
+  const sources = [
+    source("a", [lead({ businessName: "A1", starred: true }), lead({ businessName: "A2", tab: "Other", starred: true })], { tabs: ["Leads", "Other"] }),
+    source("b", [lead({ businessName: "B1", starred: true })]),
+  ];
+  page = await boot(appState({ sources }));
+  const heads = [...page.$("#starred").querySelectorAll(".tab-name")].map((n) => n.textContent);
+  assert.deepEqual(heads, ["Sheet a · Leads", "Sheet a · Other", "Sheet b · Leads"]);
+  assert.equal(page.$("#starred").querySelectorAll(".where").length, 0);
+  page.close();
+
+  page = await boot(appState({ sources, settings: { starredLayout: "labels" } }));
+  assert.equal(page.$("#starred").querySelectorAll("table").length, 1);
+  // The label gets its own column, just left of Business.
+  const headers = [...page.$("#starred").querySelectorAll("thead th")].map((th) => th.textContent);
+  assert.deepEqual(headers.slice(1, 4), ["Next", "Section · Tab", "Business"]);
+  const labels = [...page.$("#starred").querySelectorAll("tbody tr")].map((tr) => tr.children[2].querySelector(".where").title).sort();
+  assert.deepEqual(labels, ["Sheet a · Leads", "Sheet a · Other", "Sheet b · Leads"]);
+  // Every row has as many cells as the header has columns.
+  assert.ok([...page.$("#starred").querySelectorAll("tbody tr")].every((tr) => tr.children.length === headers.length));
+  // Regular sections don't get the column.
+  assert.equal(page.$("#sections").querySelectorAll(".where").length, 0);
+});
+
+test("Starred matches the other sections' color unless a color is picked", async () => {
+  page = await boot(appState({ sources: [source("a", [lead()])] }));
+  assert.equal(page.$("#starred .starred").className, "source starred");
+  page.close();
+  page = await boot(appState({ sources: [source("a", [lead()])], settings: { starredColor: "green" } }));
+  assert.ok(page.$("#starred .starred").classList.contains("c-green"));
+});
+
+test("filters apply inside Starred too", async () => {
+  const leads = [lead({ businessName: "Acme", starred: true }), lead({ businessName: "Globex", starred: true })];
+  page = await boot(appState({ sources: [source("a", leads)] }));
+  const search = page.$("#search");
+  search.value = "acme";
+  search.dispatchEvent(new page.window.Event("input"));
+  assert.deepEqual(starredNames(page), ["Acme"]);
+});
+
+test("a failed star shows why and leaves the row unstarred", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A" })])] }), {
+    "PUT /api/leads/:id/star": () => {
+      throw { status: 400, error: "That row is no longer in the dashboard. Reload the page." };
+    },
+  });
+  starButton(page, "A").click();
+  await page.settle();
+  assert.match(page.$("#banners").textContent, /no longer in the dashboard/);
+  assert.deepEqual(starredNames(page), []);
+});
+
+test("ticking a row in Starred ticks its copy in the section too", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A", starred: true })])] }));
+  check(page, "A");
+  assert.equal(page.$("#selected-count").textContent, "1 selected");
+  assert.ok(page.$$("td.cb input").every((cb) => cb.checked));
+});
+
+test("turning off Show Starred section greys out the other Starred settings", async () => {
+  const st = appState({ sources: [source("a", [lead()])], settings: { showStarred: false } });
+  page = await boot(st, { "PATCH /api/settings": (body) => ({ ...st.settings, ...body }) });
+  page.$("#settings-btn").click();
+  const sub = ["allowStarring", "starMode", "starredLayout", "starredColor"].map((k) => page.$(`[data-setting="${k}"]`));
+  assert.ok(sub.every((input) => input.disabled && input.closest(".setting").classList.contains("disabled")));
+  assert.equal(page.$('[data-setting="showStarred"]').disabled, false);
+
+  const show = page.$('[data-setting="showStarred"]');
+  show.checked = true;
+  show.dispatchEvent(new page.window.Event("change"));
+  await page.settle();
+  assert.ok(sub.every((input) => !input.disabled && !input.closest(".setting").classList.contains("disabled")));
+});

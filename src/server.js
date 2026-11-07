@@ -2,7 +2,7 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 import crypto from "crypto";
-import { BUILT_IN_STATUSES, PRIORITY_LABELS, ROOT, SERVER_PID_PATH, getSource, loadSettings, loadSources, reorderSources, saveSettings, saveSources, statusesFor, updateSource } from "./config.js";
+import { BUILT_IN_STATUSES, PRIORITY_LABELS, ROOT, SERVER_PID_PATH, dropStarsFor, getSource, loadStars, setStar, starKey, loadSettings, loadSources, reorderSources, saveSettings, saveSources, statusesFor, updateSource } from "./config.js";
 import { withSheetLock } from "./lock.js";
 import { getDb } from "./db.js";
 import { CallCounter, explainGoogleError, getAccountInfo, getConnectedAliases, sheetsClientFor } from "./google.js";
@@ -38,9 +38,10 @@ const wrap = (fn) => async (req, res) => {
   }
 };
 
-function leadView(l) {
+function leadView(l, stars = new Set(loadStars().map((s) => starKey(s.source, s.tab, s.email)))) {
   return {
     id: l.id,
+    starred: stars.has(starKey(l.source_id, l.tab, l.email)),
     tab: l.tab,
     row: l.row_number,
     email: l.email,
@@ -63,6 +64,7 @@ app.get(
   "/api/state",
   wrap(() => {
     const db = getDb();
+    const stars = new Set(loadStars().map((s) => starKey(s.source, s.tab, s.email)));
     const sources = loadSources().map((s) => ({
       id: s.id,
       name: s.name,
@@ -72,7 +74,7 @@ app.get(
       statuses: statusesFor(s),
       customStatuses: s.customStatuses || [],
       tabState: db.prepare("SELECT tab, ok, problem, row_count AS rowCount FROM tab_state WHERE source_id = ?").all(s.id),
-      leads: db.prepare("SELECT * FROM leads WHERE source_id = ?").all(s.id).map(leadView),
+      leads: db.prepare("SELECT * FROM leads WHERE source_id = ?").all(s.id).map((l) => leadView(l, stars)),
     }));
     const last = db.prepare("SELECT * FROM sync_log WHERE finished_at IS NOT NULL ORDER BY id DESC LIMIT 1").get();
     const current = loadSettings();
@@ -98,6 +100,11 @@ function settingsView(s) {
     drafterModel: s.drafterModel || "",
     draftBatchSize: s.draftBatchSize,
     port: s.port,
+    showStarred: s.showStarred !== false,
+    allowStarring: s.allowStarring !== false,
+    starMode: s.starMode,
+    starredLayout: s.starredLayout,
+    starredColor: s.starredColor,
     palette: s.palette,
     accentColor: s.accentColor || "",
     dueSoonDays: s.dueSoonDays,
@@ -138,6 +145,19 @@ app.patch(
   wrap(async (req) => {
     const lead = await setLeadField(Number(req.params.id), req.body.field, req.body.value);
     return leadView(lead);
+  })
+);
+
+// Stars only touch config/stars.json, never the sheet, so there's no need to
+// wait for a sync.
+app.put(
+  "/api/leads/:id/star",
+  wrap((req) => {
+    if (typeof req.body.starred !== "boolean") throw new Error("starred must be true or false");
+    const l = getDb().prepare("SELECT source_id, tab, email FROM leads WHERE id = ?").get(Number(req.params.id));
+    if (!l) throw new Error("That row is no longer in the dashboard. Reload the page.");
+    setStar({ source: l.source_id, tab: l.tab, email: l.email }, req.body.starred);
+    return { starred: req.body.starred };
   })
 );
 
@@ -219,6 +239,7 @@ app.delete(
     // Only the dashboard's cached copy goes; the spreadsheet is untouched.
     getDb().prepare("DELETE FROM leads WHERE source_id = ?").run(req.params.id);
     getDb().prepare("DELETE FROM tab_state WHERE source_id = ?").run(req.params.id);
+    dropStarsFor(req.params.id);
     return { ok: true };
   })
 );
