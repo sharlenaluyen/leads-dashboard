@@ -8,7 +8,7 @@ For each lead you get the business name, the sheet notes, the user's instruction
 - If the lead hasn't replied, write a brief, friendly nudge that adds something useful; don't repeat the whole pitch.
 - If the lead replied, answer what they said.
 - No placeholders like [Name] - leave out anything you don't know.
-- Plain text only. Sign off the way the user signed earlier messages, if they did.
+- Plain text only.
 
 ${UNTRUSTED_NOTICE}
 
