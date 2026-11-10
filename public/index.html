@@ -89,6 +89,10 @@
         <span class="error" id="draft-enable-error" hidden></span>
       </div>
       <p class="muted" id="draft-summary"></p>
+      <label class="field" id="draft-template-field">Email body
+        <select id="draft-template"></select>
+      </label>
+      <p class="muted" id="draft-template-note" hidden></p>
       <label class="field">Instructions for Claude (optional)
         <textarea id="draft-instructions" rows="3" placeholder="e.g. mention we're flexible on dates, keep it to 3 sentences"></textarea>
       </label>
@@ -258,6 +262,11 @@
         <span class="setting-text"><strong>About me</strong><span class="sub">A few lines about you and what you offer, sent to Claude with every batch so drafts need less editing.</span></span>
         <textarea data-setting="draftAboutMe" rows="4" maxlength="1000" placeholder="I run a small studio that…"></textarea>
       </label>
+      <div class="setting templates">
+        <span class="setting-text"><strong>Custom email body</strong><span class="sub">Follow-ups you send to many leads. Pick one under Email body when drafting: Claude writes a “Dear…” or “To…” greeting for each lead, then adds this body and your sign-off exactly as written.</span></span>
+        <div id="template-list" class="template-list"></div>
+        <button type="button" id="template-add">Add custom email body</button>
+      </div>
 
       <h3>Display</h3>
       <label class="setting">

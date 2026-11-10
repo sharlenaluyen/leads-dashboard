@@ -114,6 +114,7 @@ function settingsView(s) {
     draftTone: s.draftTone || "",
     draftSignOff: s.draftSignOff || "",
     draftAboutMe: s.draftAboutMe || "",
+    draftTemplates: s.draftTemplates || [],
     density: s.density,
     dateFormat: s.dateFormat,
     fontSize: s.fontSize,
@@ -298,7 +299,7 @@ app.post(
     const ids = req.body.leadIds;
     if (!Array.isArray(ids) || !ids.length) throw new Error("Tick at least one row");
     if (ids.length > 40) throw new Error("Draft up to 40 at a time");
-    return generateDrafts(ids.map(Number), String(req.body.instructions || ""));
+    return generateDrafts(ids.map(Number), String(req.body.instructions || ""), req.body.templateId ? String(req.body.templateId) : null);
   })
 );
 

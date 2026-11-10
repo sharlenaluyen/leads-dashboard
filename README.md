@@ -367,6 +367,20 @@ Claude couldn't write that draft), the dialog stays open with the error on
 that card; click **Save all** again to retry, and drafts that already saved
 are skipped.
 
+### Custom email body
+
+For a follow-up you send to many leads, save its body in **Settings →
+Drafting → Custom email body** (as many as 20, each with a name). Once saved, it
+shows as a summary marked **✓ Saved**; click **Edit** to change it. Then pick it
+under **Email body** in the draft dialog. Claude reads each lead's thread and
+notes only to write the greeting: “Dear <first name>,” when it can tell who
+you're writing to, otherwise “To the <business> team,”. Each draft is that
+greeting, then the saved body exactly as you wrote it, then your **Sign-off**.
+Claude doesn't retype the body, so it can't change it. Instructions in the
+dialog still apply to the greeting (for example, “use Hi instead of Dear”),
+and leads with no thread also get a subject that fits the body. The
+**Email body** picker only shows once you've saved at least one email.
+
 If **Save Gmail drafts** is off when you open the dialog, there's no point
 writing drafts you can't save, so the dialog says so and offers **Turn on Save
 Gmail drafts** (which switches the setting on right there) or **Close**. No
@@ -419,6 +433,7 @@ call has server-side refusal fallback turned on.
 | `draftTone` | `""` | Match the thread; or `"friendly"`, `"brief"`, `"formal"` |
 | `draftSignOff` | `""` | Ends every draft, as written (up to 200 characters) |
 | `draftAboutMe` | `""` | Context about you, sent to Claude with every batch (up to 1000 characters) |
+| `draftTemplates` | `[]` | Custom email bodies: `[{ "id", "name", "body" }]`, up to 20, names unique (see Custom email body) |
 | `density` | `"comfortable"` | or `"compact"` |
 | `fontSize` | `"normal"` | or `"small"`, `"large"` |
 | `dateFormat` | `"both"` | Date plus "3 days ago"; or `"relative"`, `"absolute"` (2026-11-03) |

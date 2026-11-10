@@ -872,9 +872,104 @@ function settingsError(message) {
   node.hidden = !message;
 }
 
+// --- Custom email bodies (Settings → Drafting) -------------------------------
+// Each card saves with its own button, so half-typed edits in one card aren't
+// sent (or lost) when another is saved or deleted. A saved card shows as a
+// summary; Edit reopens the form.
+
+function renderTemplates() {
+  $("#template-list").replaceChildren(...(state.settings.draftTemplates || []).map((t) => templateCard(t)));
+}
+
+function templateCard(t = null) {
+  const name = el("input", { value: t?.name || "", placeholder: "Name, e.g. Second nudge", maxlength: "60", "aria-label": "Custom email body name" });
+  const body = el("textarea", { rows: "6", maxlength: "5000", placeholder: "The body of the email, without a greeting or sign-off.", "aria-label": "Custom email body" });
+  body.value = t?.body || "";
+  const save = el("button", { type: "button", class: "primary" }, "Save");
+  const cancel = el("button", { type: "button" }, "Discard");
+  const form = el("div", { class: "template-form" }, name, body, el("div", { class: "dialog-actions" }, cancel, el("span", { class: "spacer" }), save));
+
+  const title = el("strong", { class: "template-name" });
+  const preview = el("p", { class: "template-preview muted" });
+  const edit = el("button", { type: "button" }, "Edit");
+  const remove = el("button", { type: "button", class: "danger" }, "Delete");
+  const summary = el(
+    "div",
+    { class: "template-summary" },
+    el("div", { class: "template-head" }, title, el("span", { class: "template-badge" }, "✓ Saved")),
+    preview,
+    el("p", { class: "template-hint muted" }, "Pick it under Email body when drafting."),
+    el("div", { class: "dialog-actions" }, remove, el("span", { class: "spacer" }), edit)
+  );
+  const card = el("div", { class: "template-card" }, summary, form);
+
+  let saved = t;
+  const dirty = () => !saved || name.value !== saved.name || body.value !== saved.body;
+  const refresh = () => {
+    save.disabled = !dirty() || !name.value.trim() || !body.value.trim();
+  };
+  const show = (editing) => {
+    form.hidden = !editing;
+    summary.hidden = editing;
+    if (saved) {
+      title.textContent = saved.name;
+      preview.textContent = saved.body;
+      cancel.textContent = "Cancel";
+    }
+    refresh();
+  };
+  name.addEventListener("input", refresh);
+  body.addEventListener("input", refresh);
+  show(!saved);
+
+  const others = () => (state.settings.draftTemplates || []).filter((x) => x.id !== saved?.id);
+  save.addEventListener("click", async () => {
+    const list = state.settings.draftTemplates || [];
+    const entry = { id: saved?.id, name: name.value, body: body.value };
+    const next = saved ? list.map((x) => (x.id === saved.id ? entry : x)) : [...list, entry];
+    const before = new Set(list.map((x) => x.id));
+    if (await saveTemplates(next, save)) {
+      saved = saved ? state.settings.draftTemplates.find((x) => x.id === saved.id) : state.settings.draftTemplates.find((x) => !before.has(x.id));
+      name.value = saved.name;
+      body.value = saved.body;
+      show(false);
+    } else refresh();
+  });
+  edit.addEventListener("click", () => {
+    show(true);
+    name.focus();
+  });
+  cancel.addEventListener("click", () => {
+    if (!saved) return card.remove();
+    name.value = saved.name;
+    body.value = saved.body;
+    show(false);
+  });
+  remove.addEventListener("click", async () => {
+    if (!confirm(`Delete the custom email body “${saved.name}”?`)) return;
+    if (await saveTemplates(others(), remove)) card.remove();
+  });
+  return card;
+}
+
+async function saveTemplates(list, button) {
+  settingsError("");
+  button.disabled = true;
+  try {
+    state.settings = await api("PATCH", "/api/settings", { draftTemplates: list });
+    return true;
+  } catch (err) {
+    settingsError(err.message);
+    return false;
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function openSettings() {
   settingsError("");
   renderSettings();
+  renderTemplates();
   $("#settings-dialog").showModal();
 }
 
@@ -1319,10 +1414,42 @@ function openDraftDialog() {
   const dialog = $("#draft-dialog");
   $("#draft-setup").hidden = false;
   $("#draft-results").replaceChildren();
-  $("#draft-summary").textContent = `Claude will read each lead's latest thread and notes, then write a follow-up for ${selected.size} lead${selected.size === 1 ? "" : "s"}. You'll review every draft before anything is saved to Gmail.`;
   $("#draft-enable-error").hidden = true;
+  renderTemplatePicker();
   renderDraftSavingWarning();
   dialog.showModal();
+}
+
+// "Email body": Claude writes each email, or a saved email goes in as written
+// after a greeting Claude writes. Keeps the last pick while it still exists.
+function renderTemplatePicker() {
+  const templates = state.settings.draftTemplates || [];
+  const select = $("#draft-template");
+  const keep = select.value;
+  select.replaceChildren(
+    el("option", { value: "" }, "Claude writes each email"),
+    ...templates.map((t) => el("option", { value: t.id }, t.name))
+  );
+  select.value = templates.some((t) => t.id === keep) ? keep : "";
+  $("#draft-template-field").hidden = !templates.length;
+  renderTemplateNote();
+}
+
+function renderTemplateNote() {
+  const t = (state.settings.draftTemplates || []).find((x) => x.id === $("#draft-template").value);
+  const n = selected.size;
+  const leads = `${n} lead${n === 1 ? "" : "s"}`;
+  const note = $("#draft-template-note");
+  note.hidden = !t;
+  $("#draft-instructions").placeholder = t ? "e.g. use first names only" : "e.g. mention we're flexible on dates, keep it to 3 sentences";
+  if (!t) {
+    $("#draft-summary").textContent = `Claude will read each lead's latest thread and notes, then write a follow-up for ${leads}. You'll review every draft before anything is saved to Gmail.`;
+    return;
+  }
+  $("#draft-summary").textContent = `Claude will read each lead's latest thread and notes to write a “Dear…” or “To…” greeting for ${leads}. You'll review every draft before anything is saved to Gmail.`;
+  note.textContent = state.settings.draftSignOff?.trim()
+    ? `Each draft: the greeting, then “${t.name}” exactly as saved, then your sign-off.`
+    : `Each draft: the greeting, then “${t.name}” exactly as saved. No sign-off is set in Settings → Drafting.`;
 }
 
 // With Save Gmail drafts off there's no point calling Claude: warn, offer to
@@ -1361,7 +1488,7 @@ async function generate() {
   const results = $("#draft-results");
   results.replaceChildren(el("p", { class: "muted" }, `Claude is drafting ${ids.length} email${ids.length === 1 ? "" : "s"}. This can take up to a minute.`));
   try {
-    const drafts = await api("POST", "/api/drafts/generate", { leadIds: ids, instructions: $("#draft-instructions").value });
+    const drafts = await api("POST", "/api/drafts/generate", { leadIds: ids, instructions: $("#draft-instructions").value, templateId: $("#draft-template").value || undefined });
     $("#draft-setup").hidden = true;
     results.replaceChildren(renderDraftList(drafts));
   } catch (err) {
@@ -1565,6 +1692,12 @@ $("#draft-btn").addEventListener("click", openDraftDialog);
 $("#draft-generate").addEventListener("click", generate);
 $("#draft-enable-saving").addEventListener("click", enableDraftSaving);
 $("#draft-close").addEventListener("click", () => $("#draft-dialog").close());
+$("#draft-template").addEventListener("change", renderTemplateNote);
+$("#template-add").addEventListener("click", () => {
+  const card = templateCard();
+  $("#template-list").append(card);
+  $("input", card).focus();
+});
 $("#add-source-btn").addEventListener("click", () => openSourceDialog());
 $("#history-btn").addEventListener("click", openHistory);
 $("#signins-btn").addEventListener("click", openSignins);

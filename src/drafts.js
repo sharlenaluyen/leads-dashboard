@@ -32,15 +32,23 @@ async function loadThread(gmail, lead) {
     }));
 }
 
-/** Drafts text for the given leads. Nothing is saved anywhere. */
-export async function generateDrafts(leadIds, instructions) {
+/**
+ * Drafts text for the given leads. Nothing is saved anywhere. templateId
+ * picks a saved email (Settings → Drafting) to send with a written greeting.
+ */
+export async function generateDrafts(leadIds, instructions, templateId = null) {
+  let template = null;
+  if (templateId) {
+    template = (loadSettings().draftTemplates || []).find((t) => t.id === templateId);
+    if (!template) throw new Error("That saved email no longer exists. Pick another, or reload the page.");
+  }
   const leads = leadIds.map(getLead);
   const items = await mapLimit(leads, THREAD_CONCURRENCY, async (lead) => {
     const source = getSource(lead.source_id);
     const thread = await loadThread(gmailClientFor(source.account), lead);
     return { key: String(lead.id), businessName: lead.business_name, email: lead.email, notes: lead.notes, thread };
   });
-  const drafts = await draftEmails(items, instructions);
+  const drafts = await draftEmails(items, instructions, template);
   const byKey = new Map(drafts.map((d) => [d.key, d]));
   return leads.map((lead) => {
     const d = byKey.get(String(lead.id));

@@ -1,7 +1,7 @@
 import { loadSettings } from "../config.js";
 import * as claudeCode from "./claudeCode.js";
 import * as api from "./api.js";
-import { SYSTEM_PROMPT, buildPrompt, parseDrafts } from "./prompt.js";
+import { GREETING_SYSTEM_PROMPT, SYSTEM_PROMPT, assembleSaved, buildGreetingPrompt, buildPrompt, parseDrafts, parseGreetings } from "./prompt.js";
 import { mapLimit } from "../gmailSync.js";
 
 const BACKENDS = { "claude-code": claudeCode, api };
@@ -17,14 +17,28 @@ const MIN_ATTEMPT_MS = 20_000;
 
 /**
  * items: [{ key, businessName, email, notes, thread: [{ dir, from, date, text }] }]
+ * template: a saved email ({ name, body }) or null. With one, Claude writes
+ * only each greeting, and the body is greeting + saved body + sign-off.
  * Returns [{ key, subject, body }], in batches of settings.draftBatchSize.
  * A batch that still fails after a retry, or runs out of its 2 minutes,
  * doesn't sink the others: its leads
  * come back as { key, error } instead. Only when every batch fails is the
  * error thrown.
  */
-export async function draftEmails(items, instructions) {
+export async function draftEmails(items, instructions, template = null) {
   const settings = loadSettings();
+  const mode = template
+    ? {
+        system: GREETING_SYSTEM_PROMPT,
+        prompt: (batch) => buildGreetingPrompt(batch, instructions, template),
+        parse: (text) =>
+          parseGreetings(text).map((g) => ({ key: g.key, subject: g.subject, body: assembleSaved(g.greeting, template.body, settings.draftSignOff) })),
+      }
+    : {
+        system: SYSTEM_PROMPT,
+        prompt: (batch) => buildPrompt(batch, instructions, { tone: settings.draftTone, signOff: settings.draftSignOff, aboutMe: settings.draftAboutMe }),
+        parse: parseDrafts,
+      };
   const backend = BACKENDS[settings.drafter];
   if (!backend) throw new Error(`Unknown drafter "${settings.drafter}" in settings.json (use "claude-code" or "api")`);
   const size = Math.max(1, settings.draftBatchSize || 8);
@@ -38,12 +52,12 @@ export async function draftEmails(items, instructions) {
       if (attempt > 0 && timeoutMs < MIN_ATTEMPT_MS) break;
       try {
         const text = await backend.complete({
-          system: SYSTEM_PROMPT,
-          prompt: buildPrompt(batch, instructions, { tone: settings.draftTone, signOff: settings.draftSignOff, aboutMe: settings.draftAboutMe }),
+          system: mode.system,
+          prompt: mode.prompt(batch),
           model: settings.drafterModel || undefined,
           timeoutMs,
         });
-        return { drafts: parseDrafts(text) };
+        return { drafts: mode.parse(text) };
       } catch (err) {
         lastErr = err;
       }

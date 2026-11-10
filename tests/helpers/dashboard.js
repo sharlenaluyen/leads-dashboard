@@ -59,7 +59,7 @@ export function appState({ sources = [], settings = {} } = {}) {
     lastSync: null,
     settings: { writeBack: true, createDrafts: true, drafter: "api", drafterModel: "", draftBatchSize: 5, palette: "periwinkle", accentColor: "",
       dueSoonDays: 7, overdueDays: 14, followUpBy: "priority", autoSync: "off",
-      draftTone: "", draftSignOff: "", draftAboutMe: "",
+      draftTone: "", draftSignOff: "", draftAboutMe: "", draftTemplates: [],
       density: "comfortable", dateFormat: "both", fontSize: "normal", hiddenColumns: [], overdueColor: "", dueSoonColor: "",
       defaultSort: "action", showClosedDefault: false, sectionsStart: "remember", toastSeconds: 6, doneToasts: true,
       confirmBulk: false, undoSeconds: 10,

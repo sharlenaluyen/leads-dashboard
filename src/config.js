@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -71,6 +72,9 @@ const DEFAULT_SETTINGS = {
   draftTone: "",
   draftSignOff: "",
   draftAboutMe: "",
+  // Saved follow-up emails: [{ id, name, body }]. Picked in the draft dialog,
+  // Claude writes only the greeting; the body and sign-off go in as written.
+  draftTemplates: [],
 
   // Display.
   density: "comfortable",
@@ -187,6 +191,27 @@ const text = (label, max) => (v) => {
   return t;
 };
 
+export const MAX_TEMPLATES = 20;
+function draftTemplates(v) {
+  if (!Array.isArray(v)) throw new Error("Saved emails must be a list");
+  if (v.length > MAX_TEMPLATES) throw new Error(`You can save up to ${MAX_TEMPLATES} emails`);
+  const names = new Set();
+  const ids = new Set();
+  return v.map((t) => {
+    const name = text("A saved email's name", 60)(t?.name);
+    const body = String(t?.body ?? "").trim();
+    if (!name) throw new Error("Give each saved email a name");
+    if (!body) throw new Error(`“${name}” needs a body`);
+    if (body.length > 5000) throw new Error(`“${name}” can be at most 5000 characters`);
+    if (names.has(name.toLowerCase())) throw new Error(`There's already a saved email called “${name}”`);
+    names.add(name.toLowerCase());
+    let id = typeof t.id === "string" && /^[\w-]{1,40}$/.test(t.id) && !ids.has(t.id) ? t.id : null;
+    while (!id || ids.has(id)) id = crypto.randomUUID().slice(0, 8);
+    ids.add(id);
+    return { id, name, body };
+  });
+}
+
 // Checks each setting the dashboard can change, returning the cleaned value.
 const SETTING_RULES = {
   writeBack: (v) => {
@@ -230,6 +255,7 @@ const SETTING_RULES = {
   draftTone: oneOf("draftTone", TONES),
   draftSignOff: text("Sign-off", 200),
   draftAboutMe: text("About me", 1000),
+  draftTemplates,
   density: oneOf("density", ["comfortable", "compact"]),
   dateFormat: oneOf("dateFormat", ["both", "relative", "absolute"]),
   fontSize: oneOf("fontSize", ["small", "normal", "large"]),

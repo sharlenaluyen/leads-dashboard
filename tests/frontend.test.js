@@ -689,3 +689,58 @@ test("turning off Show Starred section greys out the other Starred settings", as
   await page.settle();
   assert.ok(sub.every((input) => !input.disabled && !input.closest(".setting").classList.contains("disabled")));
 });
+
+// --- Custom email bodies ------------------------------------------------------------
+
+test("a saved email can be picked when drafting, and its id is sent to the server", async () => {
+  const leads = [lead({ businessName: "A" })];
+  const settings = { draftSignOff: "Thanks,\nSam", draftTemplates: [{ id: "t1", name: "Second nudge", body: "Checking in." }] };
+  page = await boot(appState({ sources: [source("a", leads)], settings }), { "POST /api/drafts/generate": () => [] });
+  check(page, "A");
+  page.$("#draft-btn").click();
+  assert.equal(page.$("#draft-template-field").hidden, false);
+  assert.deepEqual(optionValues(page.$("#draft-template")), ["", "t1"]);
+  choose(page, page.$("#draft-template"), "t1");
+  assert.match(page.$("#draft-template-note").textContent, /“Second nudge” exactly as saved, then your sign-off/);
+  page.$("#draft-generate").click();
+  await page.settle();
+  assert.equal(page.requests.find((r) => r.url === "/api/drafts/generate").body.templateId, "t1");
+});
+
+test("the Email body picker is hidden with no saved emails, and drafting sends no template", async () => {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A" })])] }), { "POST /api/drafts/generate": () => [] });
+  check(page, "A");
+  page.$("#draft-btn").click();
+  assert.equal(page.$("#draft-template-field").hidden, true);
+  page.$("#draft-generate").click();
+  await page.settle();
+  assert.equal(page.requests.find((r) => r.url === "/api/drafts/generate").body.templateId, undefined);
+});
+
+test("Settings adds a custom email body without touching an unsaved edit in another", async () => {
+  const existing = { id: "t1", name: "First", body: "One." };
+  page = await boot(appState({ settings: { draftTemplates: [existing] } }), {
+    "PATCH /api/settings": (body) => ({ ...appState().settings, draftTemplates: body.draftTemplates.map((t, i) => ({ ...t, id: t.id || `new${i}` })) }),
+  });
+  page.$("#settings-btn").click();
+  assert.equal(page.$(".template-card .template-form").hidden, true);
+  assert.equal(page.$(".template-card .template-name").textContent, "First");
+  [...page.$(".template-card").querySelectorAll("button")].find((b) => b.textContent === "Edit").click();
+  const first = page.$(".template-card textarea");
+  first.value = "One, edited but not saved.";
+  first.dispatchEvent(new page.window.Event("input"));
+  page.$("#template-add").click();
+  const card = page.$$(".template-card")[1];
+  card.querySelector("input").value = "Second";
+  card.querySelector("textarea").value = "Two.";
+  card.querySelector("textarea").dispatchEvent(new page.window.Event("input"));
+  [...card.querySelectorAll("button")].find((b) => b.textContent === "Save").click();
+  await page.settle();
+  const patch = page.requests.find((r) => r.method === "PATCH");
+  assert.deepEqual(patch.body.draftTemplates, [existing, { name: "Second", body: "Two." }]);
+  assert.equal(first.value, "One, edited but not saved.");
+  assert.equal(card.querySelector(".template-form").hidden, true);
+  assert.equal(card.querySelector(".template-summary").hidden, false);
+  assert.equal(card.querySelector(".template-name").textContent, "Second");
+  assert.match(card.querySelector(".template-badge").textContent, /Saved/);
+});
