@@ -25,10 +25,9 @@ export function withSheetLock(fn, { limitMs = LOCK_LIMIT_MS } = {}) {
 function withTimeLimit(fn, ms) {
   let timer;
   const limit = new Promise((_, reject) => {
+    // Not logged here: the request handler logs it (see wrap in server.js).
     timer = setTimeout(() => {
-      const err = new Error(`A spreadsheet write took longer than ${Math.round(ms / 1000)} seconds and was abandoned. Sync again to check the sheet.`);
-      console.error(err);
-      reject(err);
+      reject(new Error(`This was still running after ${Math.round(ms / 60000)} minutes, so the dashboard stopped waiting for it and let other changes go ahead. Sync to check the spreadsheet is up to date.`));
     }, ms);
   });
   return Promise.race([Promise.resolve().then(fn), limit]).finally(() => clearTimeout(timer));

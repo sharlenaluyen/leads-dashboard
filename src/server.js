@@ -332,6 +332,17 @@ app.post(
   wrap((req) => saveDraft(Number(req.body.leadId), { subject: req.body.subject, body: req.body.body }))
 );
 
+// Errors that never reach a route's wrap, such as a request body that isn't
+// valid JSON or is over the size limit, still answer in JSON so the page can
+// show the message.
+app.use((err, req, res, _next) => {
+  if (err?.type === "entity.too.large") return res.status(413).json({ error: "That's more data than the dashboard accepts in one request." });
+  if (err?.type === "entity.parse.failed") return res.status(400).json({ error: "The request wasn't valid JSON. Reload the page and try again." });
+  const status = err?.status >= 400 && err.status < 500 ? err.status : 500;
+  if (status === 500) console.error(`${req.method} ${req.path} failed:`, err);
+  res.status(status).json({ error: err?.message || String(err) });
+});
+
 const server = app.listen(settings.port, "127.0.0.1", () => {
   // Lets npm run rebuild see that the server is running (see rebuild.js).
   fs.mkdirSync(path.dirname(SERVER_PID_PATH), { recursive: true });

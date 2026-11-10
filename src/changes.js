@@ -3,7 +3,7 @@ import path from "path";
 import crypto from "crypto";
 import { HEADERS, ROOT, getSource, loadSettings } from "./config.js";
 import { getDb } from "./db.js";
-import { CallCounter, audit, getAccountInfo, sheetsClientFor } from "./google.js";
+import { CallCounter, audit, explainingGoogleErrors, getAccountInfo, googleFailure, sheetsClientFor } from "./google.js";
 import { cellRange, emailsIn, formatDate, locateHeaders, parseSheetDate, quoteTab, readRanges, writeCells } from "./sheets.js";
 import { withSheetLock } from "./lock.js";
 import { UserError } from "./errors.js";
@@ -117,7 +117,9 @@ async function undoChangeNow(id) {
   const sheets = sheetsClientFor(source.account);
   const counter = new CallCounter();
   // One read: the header rows plus the logged row.
-  const [top, [row = []]] = await readRanges(sheets, source.spreadsheetId, [`${quoteTab(entry.tab)}!1:10`, `${quoteTab(entry.tab)}!${entry.row}:${entry.row}`], counter);
+  const [top, [row = []]] = await explainingGoogleErrors(source.account, () =>
+    readRanges(sheets, source.spreadsheetId, [`${quoteTab(entry.tab)}!1:10`, `${quoteTab(entry.tab)}!${entry.row}:${entry.row}`], counter)
+  );
   const { columns } = locateHeaders(top);
   if (columns.email === undefined || columns[entry.key] === undefined) throw new UserError(`Tab "${entry.tab}" no longer has the "${entry.column}" column.`);
   if (emailsIn(row[columns.email])[0] !== entry.email) {
@@ -133,8 +135,9 @@ async function undoChangeNow(id) {
   try {
     await writeCells(sheets, source.spreadsheetId, [{ range: cellRange(entry.tab, columns[entry.key], entry.row), value, date }], counter);
   } catch (err) {
-    markFailed([logged], err);
-    throw err;
+    const failure = googleFailure(err, source.account);
+    markFailed([logged], failure);
+    throw failure;
   }
   // The next sync re-reads the row rather than trusting the cached copy.
   getDb().prepare("UPDATE leads SET row_hash = NULL WHERE source_id = ? AND tab = ? AND email = ?").run(entry.source, entry.tab, entry.email);

@@ -1,6 +1,6 @@
 import { getSource, loadSettings, statusesFor } from "./config.js";
 import { getDb } from "./db.js";
-import { CallCounter, audit, getAccountInfo, sheetsClientFor } from "./google.js";
+import { CallCounter, audit, explainingGoogleErrors, getAccountInfo, googleFailure, sheetsClientFor } from "./google.js";
 import { cellRange, emailsIn, locateHeaders, quoteTab, readRanges, writeCells } from "./sheets.js";
 import { logChanges, markFailed } from "./changes.js";
 import { withSheetLock } from "./lock.js";
@@ -12,7 +12,7 @@ const EDITABLE = {
   draftId: { header: "draftId", column: "draft_id" },
 };
 
-export class StaleRowError extends Error {}
+export class StaleRowError extends UserError {}
 
 function validate(source, field, value) {
   if (field === "priority") {
@@ -57,7 +57,9 @@ export async function setLeadFieldNow(leadId, field, rawValue) {
   // One read: the header rows plus this lead's row, to find the columns and
   // confirm the row still belongs to this email.
   const tab = quoteTab(lead.tab);
-  const [top, [row = []]] = await readRanges(sheets, source.spreadsheetId, [`${tab}!1:10`, `${tab}!${lead.row_number}:${lead.row_number}`], counter);
+  const [top, [row = []]] = await explainingGoogleErrors(source.account, () =>
+    readRanges(sheets, source.spreadsheetId, [`${tab}!1:10`, `${tab}!${lead.row_number}:${lead.row_number}`], counter)
+  );
   const { columns, missing } = locateHeaders(top);
   if (missing.length) throw new UserError(`Tab "${lead.tab}" is missing columns: ${missing.join(", ")}`);
   const emailNow = emailsIn(row[columns.email])[0];
@@ -81,8 +83,9 @@ export async function setLeadFieldNow(leadId, field, rawValue) {
   try {
     await writeCells(sheets, source.spreadsheetId, [{ range: cellRange(lead.tab, columns[spec.header], lead.row_number), value }], counter);
   } catch (err) {
-    markFailed(logged, err);
-    throw err;
+    const failure = googleFailure(err, source.account);
+    markFailed(logged, failure);
+    throw failure;
   }
   const stored = field === "priority" ? (value === "" ? null : Number(value)) : value;
   // Clearing row_hash makes the next sync re-read this row instead of

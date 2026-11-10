@@ -1,7 +1,7 @@
 import { buildRawMessage, extractPlainTextBody, fromAddressFor, headerValue } from "multi-gmail-mcp/src/gmail.js";
 import { getSource, loadSettings } from "./config.js";
 import { getDb } from "./db.js";
-import { audit, getAccountInfo, gmailClientFor, withRetry } from "./google.js";
+import { audit, explainingGoogleErrors, getAccountInfo, gmailClientFor, withRetry } from "./google.js";
 import { draftEmails } from "./drafter/index.js";
 import { setLeadFieldNow } from "./edits.js";
 import { automatedKind, mapLimit } from "./gmailSync.js";
@@ -47,7 +47,7 @@ export async function generateDrafts(leadIds, instructions, templateId = null) {
   const leads = leadIds.map(getLead);
   const items = await mapLimit(leads, THREAD_CONCURRENCY, async (lead) => {
     const source = getSource(lead.source_id);
-    const thread = await loadThread(gmailClientFor(source.account), lead);
+    const thread = await explainingGoogleErrors(source.account, () => loadThread(gmailClientFor(source.account), lead));
     return { key: String(lead.id), businessName: lead.business_name, email: lead.email, notes: lead.notes, thread };
   });
   const drafts = await draftEmails(items, instructions, template);
@@ -106,13 +106,15 @@ async function saveDraftNow(leadId, { subject, body }) {
   let references;
   let finalSubject = subject?.trim() || "Following up";
   if (lead.thread_id && lead.last_message_id) {
-    const { data: last } = await withRetry(() =>
-      gmail.users.messages.get({
-        userId: "me",
-        id: lead.last_message_id,
-        format: "metadata",
-        metadataHeaders: ["Subject", "Message-Id", "References"],
-      })
+    const { data: last } = await explainingGoogleErrors(source.account, () =>
+      withRetry(() =>
+        gmail.users.messages.get({
+          userId: "me",
+          id: lead.last_message_id,
+          format: "metadata",
+          metadataHeaders: ["Subject", "Message-Id", "References"],
+        })
+      )
     );
     const headers = last.payload?.headers;
     const originalSubject = headerValue(headers, "Subject");
@@ -131,10 +133,13 @@ async function saveDraftNow(leadId, { subject, body }) {
 
   // Gmail's view of the lead's draft wins over the sheet's copy of the id.
   const existingId = lead.gmail_draft_id || lead.draft_id;
-  const replacing = await draftExists(gmail, existingId);
-  const { data } = replacing
-    ? await withRetry(() => gmail.users.drafts.update({ userId: "me", id: existingId, requestBody: { message } }))
-    : await withRetry(() => gmail.users.drafts.create({ userId: "me", requestBody: { message } }));
+  const { replacing, data } = await explainingGoogleErrors(source.account, async () => {
+    const replacing = await draftExists(gmail, existingId);
+    const { data } = replacing
+      ? await withRetry(() => gmail.users.drafts.update({ userId: "me", id: existingId, requestBody: { message } }))
+      : await withRetry(() => gmail.users.drafts.create({ userId: "me", requestBody: { message } }));
+    return { replacing, data };
+  });
 
   audit({
     action: replacing ? "update_draft" : "draft_reply_to_message",

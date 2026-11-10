@@ -1,6 +1,6 @@
 import { getSource, loadSettings } from "./config.js";
 import { getDb } from "./db.js";
-import { CallCounter, audit, getAccountInfo, sheetsClientFor } from "./google.js";
+import { CallCounter, audit, explainingGoogleErrors, getAccountInfo, googleFailure, sheetsClientFor } from "./google.js";
 import { cellRange, emailsIn, isEmail, locateHeaders, quoteTab, readRange, writeCells } from "./sheets.js";
 import { logChanges, markFailed } from "./changes.js";
 import { withSheetLock } from "./lock.js";
@@ -51,7 +51,7 @@ async function writeContactRow({ email, sourceId, tab, businessName }) {
   // The whole tab, once: its headers, and where the last row with data is.
   // Writing just below that, rather than using Sheets' "append", never lands
   // inside a block of rows separated by blank lines.
-  const values = await readRange(sheets, source.spreadsheetId, quoteTab(tab), counter);
+  const values = await explainingGoogleErrors(source.account, () => readRange(sheets, source.spreadsheetId, quoteTab(tab), counter));
   const { columns, missing } = locateHeaders(values);
   if (missing.length) throw new UserError(`Tab "${tab}" is missing columns: ${missing.join(", ")}`);
   // The cache only learns about rows at the next sync; the sheet knows now.
@@ -73,9 +73,11 @@ async function writeContactRow({ email, sourceId, tab, businessName }) {
       counter
     );
   } catch (err) {
-    markFailed(logged, err);
-    if (/exceeds grid limits/i.test(err?.message || "")) throw new UserError(`Tab "${tab}" has no empty rows left. Add rows at the bottom in Sheets, then try again.`);
-    throw err;
+    const failure = /exceeds grid limits/i.test(err?.message || "")
+      ? new UserError(`Tab "${tab}" has no empty rows left. Add rows at the bottom in Sheets, then try again.`, { cause: err })
+      : googleFailure(err, source.account);
+    markFailed(logged, failure);
+    throw failure;
   }
   audit({
     action: "sheet_add_row",

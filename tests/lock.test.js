@@ -19,18 +19,10 @@ test("sheet writers run one at a time, in order, even after one fails", async ()
 });
 
 test("a holder that never finishes is abandoned after the limit and the queue moves on", async () => {
-  const errors = [];
-  const origError = console.error;
-  console.error = (e) => errors.push(e);
-  try {
-    const stuck = withSheetLock(() => new Promise(() => {}), { limitMs: 30 });
-    const next = withSheetLock(async () => "next ran");
-    await assert.rejects(stuck, /took longer than/);
-    assert.equal(await next, "next ran");
-    assert.equal(errors.length, 1);
-  } finally {
-    console.error = origError;
-  }
+  const stuck = withSheetLock(() => new Promise(() => {}), { limitMs: 30 });
+  const next = withSheetLock(async () => "next ran");
+  await assert.rejects(stuck, /stopped waiting for it/);
+  assert.equal(await next, "next ran");
 });
 
 test("sheetLockIdle waits for queued work, including work added while waiting", async () => {
