@@ -21,6 +21,22 @@ test("renders one row per lead, ordered by what needs doing next", async () => {
   assert.equal(row(page, "Replied Co").querySelector(".action").textContent, "Reply");
 });
 
+test("a bounced lead shows 'bounced', asks you to fix the address, and can be filtered", async () => {
+  const leads = [
+    lead({ businessName: "Waiting Co", lastEmailAt: Date.now(), lastEmailDir: "sent" }),
+    lead({ businessName: "Bounced Co", lastEmailAt: Date.now(), lastEmailDir: "bounced", draftId: "r-1" }),
+  ];
+  page = await boot(appState({ sources: [source("a", leads)] }));
+  const r = row(page, "Bounced Co");
+  assert.equal(r.querySelector(".action").textContent, "Fix address", "even with a draft waiting");
+  assert.equal(r.querySelector(".dir").textContent, "bounced");
+  assert.ok(page.$$(".pill").some((p) => p.textContent === "1 bounced"));
+  const turn = page.$("#filter-turn");
+  turn.value = "bounced";
+  turn.dispatchEvent(new page.window.Event("input"));
+  assert.deepEqual(names(page), ["Bounced Co"]);
+});
+
 test("closed leads are hidden until 'show closed' is ticked", async () => {
   const leads = [lead({ businessName: "Live" }), lead({ businessName: "Done", followUpStatus: "Closed - interested" })];
   page = await boot(appState({ sources: [source("a", leads)] }));

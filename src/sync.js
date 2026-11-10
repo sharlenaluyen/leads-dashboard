@@ -272,7 +272,7 @@ export function autoStatus(lead, current, { elsewhere = false, reopen = false } 
   const now = String(current || "").trim().toLowerCase();
   if (!AUTO_STATUSES.includes(now) && !(reopen && isClosed(now))) return null;
   if (elsewhere) return "Contacted elsewhere";
-  if (lead.gmail_draft_id || lead.last_email_dir === "received") return "Pending action";
+  if (lead.gmail_draft_id || lead.last_email_dir === "received" || lead.last_email_dir === "bounced") return "Pending action";
   if (lead.last_email_dir === "sent") return "Awaiting Reply";
   return "Open";
 }

@@ -53,7 +53,7 @@ extra columns alongside):
 | `priority` | you or the dashboard: `0`-`3` (below) |
 | `follow-up status` | you or the dashboard: one of the statuses below, or a custom one |
 | `last email` | Gmail: date of the newest email either way, in any of the lead's threads |
-| `last email dir` | Gmail: `sent` or `received` |
+| `last email dir` | Gmail: `sent`, `received` or `bounced` |
 | `last followed up` | Gmail: date of the newest email **you** sent |
 | `draft id` | Gmail: the lead's newest unsent draft (blank once it's sent or discarded) |
 | `notes` *(optional)* | you: given to Claude when drafting |
@@ -77,7 +77,7 @@ Awaiting Reply or Contacted elsewhere:
 | Gmail shows | Status |
 | --- | --- |
 | No email with them, but the sheet has a date in `last email` or `last followed up` | Contacted elsewhere (the sheet's dates are kept) |
-| They replied last, or there's an unsent draft | Pending action |
+| They replied last, your last email bounced, or there's an unsent draft | Pending action |
 | You sent last | Awaiting Reply |
 | No emails, and no dates in the sheet | Open |
 
@@ -255,10 +255,14 @@ before it, two **Add**s can't land on the same row, and double-clicking
   sync summary and written by the next sync; people found in their threads
   go to the review list. A change made in the split second between that
   re-read and the write still isn't caught, the same as for dashboard edits.
-- **Auto-replies and bounces count as replies.** An out-of-office reply or a
-  bounce in a lead's thread is treated like a real reply: the row turns
-  **Pending action**, and a Closed row reopens (clearing a priority of 0).
-  They're kept out of the review list, but not out of the dates and status.
+- **Bounces and auto-replies are recognized by their headers.** A bounce
+  (from `mailer-daemon@`/`postmaster@`, a "Mail Delivery Subsystem" sender
+  or text, an `X-Failed-Recipients` header, a delivery-status report, or a
+  bounce subject on an `Auto-Submitted` message) sets `last email dir` to
+  `bounced` and the row to **Pending action**, shown as **Fix address**; it
+  doesn't reopen a Closed row. Out-of-office, vacation and other automatic
+  replies, and "delivery delayed" notices, are ignored as if they never
+  arrived. Anything that slips past these checks still counts as a reply.
 - **Bcc is ignored.** Mail where a lead was only Bcc'd doesn't count for
   them: lookups search `to:`, `cc:` and `from:`, never `bcc:`.
 - **Address variants don't match.** Addresses are compared exactly (letter

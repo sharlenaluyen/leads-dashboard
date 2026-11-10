@@ -394,13 +394,14 @@ function matches(lead, f) {
   if (f.priority === "none" && lead.priority != null) return false;
   if (f.priority && f.priority !== "none" && String(lead.priority) !== f.priority) return false;
   if (f.turn === "none" && lead.lastEmailAt) return false;
-  if ((f.turn === "sent" || f.turn === "received") && lead.lastEmailDir !== f.turn) return false;
+  if (["sent", "received", "bounced"].includes(f.turn) && lead.lastEmailDir !== f.turn) return false;
   return true;
 }
 
 // What each row needs from you next, most pressing first.
 const ACTIONS = [
   { key: "reply", label: "Reply", title: "They replied and you haven't drafted an answer" },
+  { key: "bounced", label: "Fix address", title: "Your last email bounced; check the address" },
   { key: "send", label: "Send draft", title: "A Gmail draft is waiting to be sent" },
   { key: "nudge", label: "Follow up", title: "Waiting on them and overdue (priority 3, or past the Overdue days in Settings)" },
   { key: "first", label: "First email", title: "Never emailed" },
@@ -419,7 +420,21 @@ function nextAction(l) {
   const none = isClosed(l.followUpStatus) || /^confirmed$/i.test(l.followUpStatus.trim()) || l.priority === 0;
   // What's left after reply / draft / never-emailed is "you sent last".
   const nudge = l.priority === 3 || (state.settings.followUpBy === "timing" && l.lastEmailAt && timingOf(l.lastEmailAt) === "overdue");
-  const i = none ? 5 : l.lastEmailDir === "received" && !l.draftId ? 0 : l.draftId ? 1 : !l.lastEmailAt ? 3 : nudge ? 2 : 4;
+  // A bounce comes before a waiting draft: that draft goes to the same address.
+  const key = none
+    ? "none"
+    : l.lastEmailDir === "received" && !l.draftId
+      ? "reply"
+      : l.lastEmailDir === "bounced"
+        ? "bounced"
+        : l.draftId
+          ? "send"
+          : !l.lastEmailAt
+            ? "first"
+            : nudge
+              ? "nudge"
+              : "wait";
+  const i = ACTIONS.findIndex((a) => a.key === key);
   return { rank: i, ...ACTIONS[i] };
 }
 
@@ -1039,6 +1054,8 @@ function renderCounts(box, leads) {
   if (overdue) box.append(el("span", { class: "pill urgent" }, `${overdue} overdue`));
   const yourTurn = open.filter((l) => l.lastEmailDir === "received").length;
   if (yourTurn) box.append(el("span", { class: "pill turn" }, `${yourTurn} your turn`));
+  const bounced = open.filter((l) => l.lastEmailDir === "bounced").length;
+  if (bounced) box.append(el("span", { class: "pill bounced" }, `${bounced} bounced`));
 }
 
 // Clicking anywhere on a header opens/closes it, except its other buttons.
@@ -1216,7 +1233,12 @@ function renderRow(source, lead, { label = false } = {}) {
   const offTitle = writable ? undefined : "Writing to spreadsheets is turned off in Settings";
 
   const both = state.settings.dateFormat !== "relative" && state.settings.dateFormat !== "absolute";
-  const dir = () => el("span", { class: `dir ${lead.lastEmailDir}` }, lead.lastEmailDir === "received" ? "they replied" : "you sent");
+  const dir = () =>
+    el(
+      "span",
+      { class: `dir ${lead.lastEmailDir}`, title: lead.lastEmailDir === "bounced" ? "Your last email bounced: the address didn't accept it" : undefined },
+      { received: "they replied", bounced: "bounced" }[lead.lastEmailDir] || "you sent"
+    );
   const lastCell = lead.lastEmailAt
     ? both
       ? el(

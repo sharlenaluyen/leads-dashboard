@@ -54,7 +54,7 @@ function leadView(l, stars = new Set(loadStars().map((s) => starKey(s.source, s.
     // read-and-write; Gmail reaches the dashboard only through the sheet.
     draftId: l.draft_id,
     lastEmailAt: parseSheetDate(l.sheet_last_email),
-    lastEmailDir: ["sent", "received"].includes(l.sheet_last_dir) ? l.sheet_last_dir : null,
+    lastEmailDir: ["sent", "received", "bounced"].includes(l.sheet_last_dir) ? l.sheet_last_dir : null,
     lastFollowedUpAt: parseSheetDate(l.sheet_last_followed),
     gmailChecked: Boolean(l.gmail_checked),
   };

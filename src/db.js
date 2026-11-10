@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS leads (
   row_hash         TEXT,
   -- Gmail state (the truth for the email columns)
   last_email_at       INTEGER,             -- ms epoch, newest message either way
-  last_email_dir      TEXT,                -- 'sent' | 'received'
+  last_email_dir      TEXT,                -- 'sent' | 'received' | 'bounced'
   last_followed_up_at INTEGER,             -- ms epoch, newest message you sent
   last_message_id     TEXT,                -- Gmail id of the newest message
   last_sent_id        TEXT,                -- Gmail id of the newest message you sent
@@ -112,18 +112,25 @@ CREATE TABLE IF NOT EXISTS sync_log (
 // Bump when the tables above change shape. An older cache is dropped and the
 // next sync refills it from the sheets and Gmail.
 const SCHEMA_VERSION = 2;
+// Bump for one-off fixes to cached data that keep the layout (see init).
+const DB_VERSION = 3;
 
-function init(d) {
+// Exported for tests.
+export function init(d) {
   d.exec("PRAGMA foreign_keys = ON;");
-  if (d.prepare("PRAGMA user_version").get().user_version < SCHEMA_VERSION) {
+  const version = d.prepare("PRAGMA user_version").get().user_version;
+  if (version < SCHEMA_VERSION) {
     d.exec(`DROP TABLE IF EXISTS lead_threads; DROP TABLE IF EXISTS draft_meta; DROP TABLE IF EXISTS leads;
       DROP TABLE IF EXISTS gmail_cursor; DROP TABLE IF EXISTS tab_state;`);
-    d.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   }
   d.exec(SCHEMA);
   // Columns added after a layout version, filled in by the next sync.
   const have = new Set(d.prepare("PRAGMA table_info(leads)").all().map((c) => c.name));
   if (!have.has("all_emails")) d.exec("ALTER TABLE leads ADD COLUMN all_emails TEXT");
+  // Bounces and out-of-office replies used to count as replies: the next
+  // sync looks up every lead marked "received" again.
+  if (version < 3) d.exec("UPDATE leads SET gmail_checked = 0 WHERE last_email_dir = 'received'");
+  if (version < DB_VERSION) d.exec(`PRAGMA user_version = ${DB_VERSION}`);
 }
 
 let db;

@@ -17,6 +17,50 @@ const THREADS_PER_LEAD = 100;
 const BULK_CATEGORIES = ["CATEGORY_PROMOTIONS", "CATEGORY_SOCIAL", "CATEGORY_UPDATES", "CATEGORY_FORUMS"];
 const AUTOMATED_ADDRESS = /(^|[._+-])(no-?reply|do-?not-?reply|mailer-daemon|postmaster|notifications?|bounces?)([._+-]|@)/i;
 
+// Bounces. Gmail's come from "Mail Delivery Subsystem <mailer-daemon@googlemail.com>";
+// other servers use postmaster@ or a name like "Mail Delivery System".
+const BOUNCE_ADDRESS = /^(mailer-daemon|postmaster)@/i;
+const BOUNCE_TEXT = /mail delivery (subsystem|system|service)/i;
+// Subjects only count alongside an Auto-Submitted header, so a person
+// writing "undeliverable" isn't taken for a bounce.
+const BOUNCE_SUBJECT =
+  /^\s*(delivery status notification|undeliverable|undelivered mail|mail delivery failed|returned mail|delivery failure|failure notice|message not delivered|non-?delivery)/i;
+// "Still trying" notices: not a bounce yet, and not a reply either.
+const DELAY_TEXT = /\(delay\)|\bdelayed\b|delivery incomplete|temporary (problem|failure)/i;
+const AUTO_REPLY_SUBJECT = /^\s*(automatic reply|auto[- ]?reply|autoreply|auto[- ]?response|out of (the )?office|ooo\b|on vacation|vacation reply|away from)/i;
+
+// Headers needed to tell people from machines (beyond From/To/Cc).
+const AUTOMATION_HEADERS = ["Subject", "Auto-Submitted", "X-Failed-Recipients", "Content-Type", "X-Autoreply", "X-Autorespond"];
+
+/**
+ * What kind of machine sent a received message, if any:
+ *   "bounce": a delivery failure for something you sent
+ *   "auto":   an out-of-office, vacation or other automatic reply, or a
+ *             delivery-delay notice; treated as if it never arrived
+ *   null:     a person (or anything not recognized as automatic)
+ */
+export function automatedKind(msg) {
+  if ((msg.labelIds || []).includes("SENT")) return null;
+  const headers = msg.payload?.headers;
+  const h = (name) => headerValue(headers, name) || "";
+  const from = h("From");
+  const subject = h("Subject");
+  const snippet = msg.snippet || "";
+  const autoSubmitted = /^\s*auto-/i.test(h("Auto-Submitted"));
+  const bounce =
+    Boolean(h("X-Failed-Recipients")) ||
+    /report-type="?delivery-status/i.test(h("Content-Type")) ||
+    BOUNCE_ADDRESS.test(extractEmailAddress(from)) ||
+    BOUNCE_TEXT.test(from) ||
+    BOUNCE_TEXT.test(snippet) ||
+    (autoSubmitted && BOUNCE_SUBJECT.test(subject));
+  if (bounce) return DELAY_TEXT.test(`${subject} ${snippet}`) ? "auto" : "bounce";
+  if (autoSubmitted || h("X-Autoreply") || h("X-Autorespond") || /auto_reply/i.test(h("Precedence")) || AUTO_REPLY_SUBJECT.test(subject)) {
+    return "auto";
+  }
+  return null;
+}
+
 const isIgnored = (labelIds) => (labelIds || []).some((l) => IGNORED_LABELS.includes(l));
 
 // Whether a new message could introduce someone not in any sheet: anything
@@ -76,19 +120,27 @@ export async function mapLimit(items, limit, fn) {
 }
 
 // A message's metadata reduced to what follow-up tracking needs.
+//   dir:  "sent" | "received" | "bounced"
+//   skip: an automatic reply (out of office and the like) that counts as
+//         if it never arrived
 export function summarizeMessage(msg) {
   const headers = msg.payload?.headers;
+  const fromYou = threadReplyState([msg]).last_message_from_you;
+  const kind = fromYou ? null : automatedKind(msg);
   const addresses = [
     ...splitAddressList(headerValue(headers, "From")),
     ...splitAddressList(headerValue(headers, "To")),
     ...splitAddressList(headerValue(headers, "Cc")),
+    // The address that failed, so a bounce outside the lead's thread still
+    // finds its lead.
+    ...(kind === "bounce" ? splitAddressList(headerValue(headers, "X-Failed-Recipients")) : []),
   ].map(extractEmailAddress);
-  const fromYou = threadReplyState([msg]).last_message_from_you;
   return {
     id: msg.id,
     threadId: msg.threadId,
     at: Number(msg.internalDate),
-    dir: fromYou ? "sent" : "received",
+    dir: fromYou ? "sent" : kind === "bounce" ? "bounced" : "received",
+    skip: kind === "auto",
     addresses: new Set(addresses),
   };
 }
@@ -99,7 +151,7 @@ async function getMeta(gmail, id, counter) {
       userId: "me",
       id,
       format: "metadata",
-      metadataHeaders: ["From", "To", "Cc", "Date", "List-Unsubscribe", "Precedence", "Auto-Submitted"],
+      metadataHeaders: ["From", "To", "Cc", "Date", "List-Unsubscribe", "Precedence", ...AUTOMATION_HEADERS],
     })
   );
   return data;
@@ -149,7 +201,9 @@ export function applyMessage(lead, m) {
 }
 
 // A full look at one lead, from scratch: its threads, its newest message
-// either way, and its newest sent one. Three calls at most.
+// either way, and its newest sent one. Three calls, plus one for each
+// automatic reply passed over (up to AUTO_REPLY_SCAN).
+const AUTO_REPLY_SCAN = 5;
 async function backfillLead(gmail, lead, counter) {
   const found = await listIds(gmail, addressQuery(addressesOf(lead)), counter, { max: THREADS_PER_LEAD });
   const change = {
@@ -164,9 +218,16 @@ async function backfillLead(gmail, lead, counter) {
     replaceThreads: true,
   };
   if (!found.length) return change;
-  const newest = summarizeMessage(await getMeta(gmail, found[0].id, counter));
-  Object.assign(change, applyMessage({}, newest));
-  if (newest.dir !== "sent") {
+  let newest = null;
+  for (const { id } of found.slice(0, AUTO_REPLY_SCAN)) {
+    const m = summarizeMessage(await getMeta(gmail, id, counter));
+    if (!m.skip) {
+      newest = m;
+      break;
+    }
+  }
+  if (newest) Object.assign(change, applyMessage({}, newest));
+  if (newest?.dir !== "sent") {
     const [sent] = await listIds(gmail, addressQuery(addressesOf(lead), { sentOnly: true }), counter, { max: 1 });
     if (sent) Object.assign(change, applyMessage(change, summarizeMessage(await getMeta(gmail, sent.id, counter))));
   }
@@ -357,6 +418,7 @@ export async function syncAccount(gmail, { leads, threads = new Map(), cursor, d
     for (const msg of metas) {
       if (isIgnored(msg.labelIds)) continue;
       const m = summarizeMessage(msg);
+      if (m.skip) continue;
       const threadLead = m.dir === "received" ? (byThread.get(m.threadId) || [])[0] : null;
       for (const c of introIds.has(msg.id) ? contactsIn(msg, self) : []) {
         if (leadEmails.has(c.email)) continue;
