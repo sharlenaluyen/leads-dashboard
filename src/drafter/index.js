@@ -3,6 +3,7 @@ import * as claudeCode from "./claudeCode.js";
 import * as api from "./api.js";
 import { GREETING_SYSTEM_PROMPT, SYSTEM_PROMPT, assembleSaved, buildGreetingPrompt, buildPrompt, parseDrafts, parseGreetings } from "./prompt.js";
 import { mapLimit } from "../gmailSync.js";
+import { UserError } from "../errors.js";
 
 const BACKENDS = { "claude-code": claudeCode, api };
 
@@ -40,7 +41,7 @@ export async function draftEmails(items, instructions, template = null) {
         parse: parseDrafts,
       };
   const backend = BACKENDS[settings.drafter];
-  if (!backend) throw new Error(`Unknown drafter "${settings.drafter}" in settings.json (use "claude-code" or "api")`);
+  if (!backend) throw new UserError(`Unknown drafter "${settings.drafter}" in settings.json (use "claude-code" or "api")`);
   const size = Math.max(1, settings.draftBatchSize || 8);
   const batches = [];
   for (let i = 0; i < items.length; i += size) batches.push(items.slice(i, i + size));

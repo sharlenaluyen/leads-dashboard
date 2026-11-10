@@ -1,9 +1,10 @@
 import { getSource, loadSettings, statusesFor } from "./config.js";
 import { getDb } from "./db.js";
-import { CallCounter, audit, getAccountInfo, sheetsClientFor } from "./google.js";
+import { CallCounter, audit, explainingGoogleErrors, getAccountInfo, googleFailure, sheetsClientFor } from "./google.js";
 import { cellRange, emailsIn, locateHeaders, quoteTab, readRanges, writeCells } from "./sheets.js";
 import { logChanges, markFailed } from "./changes.js";
 import { withSheetLock } from "./lock.js";
+import { UserError } from "./errors.js";
 
 const EDITABLE = {
   priority: { header: "priority", column: "priority" },
@@ -11,18 +12,18 @@ const EDITABLE = {
   draftId: { header: "draftId", column: "draft_id" },
 };
 
-export class StaleRowError extends Error {}
+export class StaleRowError extends UserError {}
 
 function validate(source, field, value) {
   if (field === "priority") {
     if (value === "" || value == null) return "";
-    if (!/^[0-3]$/.test(String(value))) throw new Error("Priority must be 0, 1, 2 or 3");
+    if (!/^[0-3]$/.test(String(value))) throw new UserError("Priority must be 0, 1, 2 or 3");
     return String(value);
   }
   if (field === "followUpStatus") {
     if (value === "") return "";
     const match = statusesFor(source).find((s) => s.toLowerCase() === String(value).toLowerCase());
-    if (!match) throw new Error(`Unknown status "${value}". Add it as a custom status first.`);
+    if (!match) throw new UserError(`Unknown status "${value}". Add it as a custom status first.`);
     return match;
   }
   return String(value ?? "");
@@ -41,13 +42,13 @@ export function setLeadField(leadId, field, rawValue) {
 // setLeadField for a caller already holding the sheet lock.
 export async function setLeadFieldNow(leadId, field, rawValue) {
   const spec = EDITABLE[field];
-  if (!spec) throw new Error(`"${field}" isn't editable`);
+  if (!spec) throw new UserError(`"${field}" isn't editable`);
   if (!loadSettings().writeBack) {
-    throw new Error("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
+    throw new UserError("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
   }
   const db = getDb();
   const lead = db.prepare("SELECT * FROM leads WHERE id = ?").get(leadId);
-  if (!lead) throw new Error("Lead not found. Sync and try again.");
+  if (!lead) throw new UserError("Lead not found. Sync and try again.");
   const source = getSource(lead.source_id);
   const value = validate(source, field, rawValue);
 
@@ -56,9 +57,11 @@ export async function setLeadFieldNow(leadId, field, rawValue) {
   // One read: the header rows plus this lead's row, to find the columns and
   // confirm the row still belongs to this email.
   const tab = quoteTab(lead.tab);
-  const [top, [row = []]] = await readRanges(sheets, source.spreadsheetId, [`${tab}!1:10`, `${tab}!${lead.row_number}:${lead.row_number}`], counter);
+  const [top, [row = []]] = await explainingGoogleErrors(source.account, () =>
+    readRanges(sheets, source.spreadsheetId, [`${tab}!1:10`, `${tab}!${lead.row_number}:${lead.row_number}`], counter)
+  );
   const { columns, missing } = locateHeaders(top);
-  if (missing.length) throw new Error(`Tab "${lead.tab}" is missing columns: ${missing.join(", ")}`);
+  if (missing.length) throw new UserError(`Tab "${lead.tab}" is missing columns: ${missing.join(", ")}`);
   const emailNow = emailsIn(row[columns.email])[0];
   if (emailNow !== lead.email) {
     throw new StaleRowError("This row moved or changed in the spreadsheet since the last sync. Sync, then try again.");
@@ -80,8 +83,9 @@ export async function setLeadFieldNow(leadId, field, rawValue) {
   try {
     await writeCells(sheets, source.spreadsheetId, [{ range: cellRange(lead.tab, columns[spec.header], lead.row_number), value }], counter);
   } catch (err) {
-    markFailed(logged, err);
-    throw err;
+    const failure = googleFailure(err, source.account);
+    markFailed(logged, failure);
+    throw failure;
   }
   const stored = field === "priority" ? (value === "" ? null : Number(value)) : value;
   // Clearing row_hash makes the next sync re-read this row instead of

@@ -2,6 +2,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { UserError } from "./errors.js";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SETTINGS_PATH = path.join(ROOT, "config", "settings.json");
@@ -167,43 +168,43 @@ export const COLUMNS = ["action", "details", "lastEmail", "lastFollowedUp", "pri
 export const SORTS = ["action", "priority", "lastEmail", "name"];
 
 const onOff = (key) => (v) => {
-  if (typeof v !== "boolean") throw new Error(`${key} must be on or off`);
+  if (typeof v !== "boolean") throw new UserError(`${key} must be on or off`);
   return v;
 };
 const oneOf = (key, options) => (v) => {
-  if (!options.includes(v)) throw new Error(`${key} must be one of: ${options.join(", ")}`);
+  if (!options.includes(v)) throw new UserError(`${key} must be one of: ${options.join(", ")}`);
   return v;
 };
 
 const wholeNumber = (label, min, max) => (v) => {
   const n = Number(v);
-  if (v === "" || !Number.isInteger(n) || n < min || n > max) throw new Error(`${label} must be a whole number from ${min} to ${max}`);
+  if (v === "" || !Number.isInteger(n) || n < min || n > max) throw new UserError(`${label} must be a whole number from ${min} to ${max}`);
   return n;
 };
 const hexColor = (label) => (v) => {
   const color = String(v ?? "").trim().toLowerCase();
-  if (color && !/^#[0-9a-f]{6}$/.test(color)) throw new Error(`${label} must be a hex color like #5b5fc7`);
+  if (color && !/^#[0-9a-f]{6}$/.test(color)) throw new UserError(`${label} must be a hex color like #5b5fc7`);
   return color || null;
 };
 const text = (label, max) => (v) => {
   const t = String(v ?? "").trim();
-  if (t.length > max) throw new Error(`${label} can be at most ${max} characters`);
+  if (t.length > max) throw new UserError(`${label} can be at most ${max} characters`);
   return t;
 };
 
 export const MAX_TEMPLATES = 20;
 function draftTemplates(v) {
-  if (!Array.isArray(v)) throw new Error("Saved emails must be a list");
-  if (v.length > MAX_TEMPLATES) throw new Error(`You can save up to ${MAX_TEMPLATES} emails`);
+  if (!Array.isArray(v)) throw new UserError("Saved emails must be a list");
+  if (v.length > MAX_TEMPLATES) throw new UserError(`You can save up to ${MAX_TEMPLATES} emails`);
   const names = new Set();
   const ids = new Set();
   return v.map((t) => {
     const name = text("A saved email's name", 60)(t?.name);
     const body = String(t?.body ?? "").trim();
-    if (!name) throw new Error("Give each saved email a name");
-    if (!body) throw new Error(`“${name}” needs a body`);
-    if (body.length > 5000) throw new Error(`“${name}” can be at most 5000 characters`);
-    if (names.has(name.toLowerCase())) throw new Error(`There's already a saved email called “${name}”`);
+    if (!name) throw new UserError("Give each saved email a name");
+    if (!body) throw new UserError(`“${name}” needs a body`);
+    if (body.length > 5000) throw new UserError(`“${name}” can be at most 5000 characters`);
+    if (names.has(name.toLowerCase())) throw new UserError(`There's already a saved email called “${name}”`);
     names.add(name.toLowerCase());
     let id = typeof t.id === "string" && /^[\w-]{1,40}$/.test(t.id) && !ids.has(t.id) ? t.id : null;
     while (!id || ids.has(id)) id = crypto.randomUUID().slice(0, 8);
@@ -215,30 +216,30 @@ function draftTemplates(v) {
 // Checks each setting the dashboard can change, returning the cleaned value.
 const SETTING_RULES = {
   writeBack: (v) => {
-    if (typeof v !== "boolean") throw new Error("writeBack must be on or off");
+    if (typeof v !== "boolean") throw new UserError("writeBack must be on or off");
     return v;
   },
   createDrafts: (v) => {
-    if (typeof v !== "boolean") throw new Error("createDrafts must be on or off");
+    if (typeof v !== "boolean") throw new UserError("createDrafts must be on or off");
     return v;
   },
   drafter: (v) => {
-    if (!DRAFTERS.includes(v)) throw new Error(`drafter must be one of: ${DRAFTERS.join(", ")}`);
+    if (!DRAFTERS.includes(v)) throw new UserError(`drafter must be one of: ${DRAFTERS.join(", ")}`);
     return v;
   },
   drafterModel: (v) => {
     const model = String(v ?? "").trim();
-    if (model.length > 100 || /\s/.test(model)) throw new Error("That doesn't look like a model name");
+    if (model.length > 100 || /\s/.test(model)) throw new UserError("That doesn't look like a model name");
     return model || null;
   },
   draftBatchSize: (v) => {
     const n = Number(v);
-    if (!Number.isInteger(n) || n < 1 || n > 40) throw new Error("Leads per Claude call must be a whole number from 1 to 40");
+    if (!Number.isInteger(n) || n < 1 || n > 40) throw new UserError("Leads per Claude call must be a whole number from 1 to 40");
     return n;
   },
   port: (v) => {
     const n = Number(v);
-    if (!Number.isInteger(n) || n < 1024 || n > 65535) throw new Error("Port must be a whole number from 1024 to 65535");
+    if (!Number.isInteger(n) || n < 1024 || n > 65535) throw new UserError("Port must be a whole number from 1024 to 65535");
     return n;
   },
   showStarred: onOff("showStarred"),
@@ -260,7 +261,7 @@ const SETTING_RULES = {
   dateFormat: oneOf("dateFormat", ["both", "relative", "absolute"]),
   fontSize: oneOf("fontSize", ["small", "normal", "large"]),
   hiddenColumns: (v) => {
-    if (!Array.isArray(v) || !v.every((c) => COLUMNS.includes(c))) throw new Error(`hiddenColumns must list some of: ${COLUMNS.join(", ")}`);
+    if (!Array.isArray(v) || !v.every((c) => COLUMNS.includes(c))) throw new UserError(`hiddenColumns must list some of: ${COLUMNS.join(", ")}`);
     return [...new Set(v)];
   },
   overdueColor: hexColor("Overdue color"),
@@ -279,12 +280,12 @@ const SETTING_RULES = {
 export function saveSettings(change) {
   const clean = {};
   for (const [key, value] of Object.entries(change || {})) {
-    if (!SETTING_RULES[key]) throw new Error(`"${key}" isn't a setting the dashboard can change`);
+    if (!SETTING_RULES[key]) throw new UserError(`"${key}" isn't a setting the dashboard can change`);
     clean[key] = SETTING_RULES[key](value);
   }
   const saved = readJson(SETTINGS_PATH, {});
   const next = { ...DEFAULT_SETTINGS, ...saved, ...clean };
-  if (next.overdueDays <= next.dueSoonDays) throw new Error(`Overdue must be more days than Due soon (${next.dueSoonDays})`);
+  if (next.overdueDays <= next.dueSoonDays) throw new UserError(`Overdue must be more days than Due soon (${next.dueSoonDays})`);
   writeJsonAtomic(SETTINGS_PATH, { ...saved, ...clean });
   return loadSettings();
 }
@@ -302,14 +303,14 @@ export function saveSources(sources) {
 
 export function getSource(id) {
   const source = loadSources().find((s) => s.id === id);
-  if (!source) throw new Error(`Unknown source "${id}"`);
+  if (!source) throw new UserError(`Unknown source "${id}"`);
   return source;
 }
 
 export function updateSource(id, change) {
   const sources = loadSources();
   const i = sources.findIndex((s) => s.id === id);
-  if (i === -1) throw new Error(`Unknown source "${id}"`);
+  if (i === -1) throw new UserError(`Unknown source "${id}"`);
   sources[i] = { ...sources[i], ...change, id };
   saveSources(sources);
   return sources[i];
@@ -321,7 +322,7 @@ export function reorderSources(ids) {
   const sources = loadSources();
   const byId = new Map(sources.map((s) => [s.id, s]));
   if (!Array.isArray(ids) || ids.length !== sources.length || new Set(ids).size !== ids.length || !ids.every((id) => byId.has(id))) {
-    throw new Error("Section list is out of date. Reload the page and try again.");
+    throw new UserError("Section list is out of date. Reload the page and try again.");
   }
   const ordered = ids.map((id) => byId.get(id));
   saveSources(ordered);

@@ -3,9 +3,10 @@ import path from "path";
 import crypto from "crypto";
 import { HEADERS, ROOT, getSource, loadSettings } from "./config.js";
 import { getDb } from "./db.js";
-import { CallCounter, audit, getAccountInfo, sheetsClientFor } from "./google.js";
+import { CallCounter, audit, explainingGoogleErrors, getAccountInfo, googleFailure, sheetsClientFor } from "./google.js";
 import { cellRange, emailsIn, formatDate, locateHeaders, parseSheetDate, quoteTab, readRanges, writeCells } from "./sheets.js";
 import { withSheetLock } from "./lock.js";
+import { UserError } from "./errors.js";
 
 // Every cell the dashboard writes to a spreadsheet, one JSON object per line,
 // oldest first. Unlike the SQLite cache this is never rebuilt or deleted by
@@ -104,27 +105,29 @@ export function undoChange(id) {
 }
 
 async function undoChangeNow(id) {
-  if (!loadSettings().writeBack) throw new Error("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
+  if (!loadSettings().writeBack) throw new UserError("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
   const all = readAll();
   const entry = all.find((e) => e.id === id && !e.failedOf);
-  if (!entry) throw new Error("That change isn't in the log.");
+  if (!entry) throw new UserError("That change isn't in the log.");
   const failed = new Set(all.filter((e) => e.failedOf).map((e) => e.failedOf));
-  if (failed.has(id)) throw new Error("That change never reached the spreadsheet, so there's nothing to undo.");
-  if (all.some((e) => e.undoOf === id && !failed.has(e.id))) throw new Error("That change was already undone.");
-  if (entry.by === "add-contact") throw new Error("To undo an added row, delete the row in the spreadsheet.");
+  if (failed.has(id)) throw new UserError("That change never reached the spreadsheet, so there's nothing to undo.");
+  if (all.some((e) => e.undoOf === id && !failed.has(e.id))) throw new UserError("That change was already undone.");
+  if (entry.by === "add-contact") throw new UserError("To undo an added row, delete the row in the spreadsheet.");
   const source = getSource(entry.source);
   const sheets = sheetsClientFor(source.account);
   const counter = new CallCounter();
   // One read: the header rows plus the logged row.
-  const [top, [row = []]] = await readRanges(sheets, source.spreadsheetId, [`${quoteTab(entry.tab)}!1:10`, `${quoteTab(entry.tab)}!${entry.row}:${entry.row}`], counter);
+  const [top, [row = []]] = await explainingGoogleErrors(source.account, () =>
+    readRanges(sheets, source.spreadsheetId, [`${quoteTab(entry.tab)}!1:10`, `${quoteTab(entry.tab)}!${entry.row}:${entry.row}`], counter)
+  );
   const { columns } = locateHeaders(top);
-  if (columns.email === undefined || columns[entry.key] === undefined) throw new Error(`Tab "${entry.tab}" no longer has the "${entry.column}" column.`);
+  if (columns.email === undefined || columns[entry.key] === undefined) throw new UserError(`Tab "${entry.tab}" no longer has the "${entry.column}" column.`);
   if (emailsIn(row[columns.email])[0] !== entry.email) {
-    throw new Error("That row moved or changed email since. Find the row in the spreadsheet and fix it there.");
+    throw new UserError("That row moved or changed email since. Find the row in the spreadsheet and fix it there.");
   }
   const current = String(row[columns[entry.key]] ?? "");
   if (!sameCell(entry.key, current, entry.new)) {
-    throw new Error(`The cell has changed since (it's now "${current}"), so it wasn't undone.`);
+    throw new UserError(`The cell has changed since (it's now "${current}"), so it wasn't undone.`);
   }
   const date = DATE_KEYS.has(entry.key) && parseSheetDate(entry.old) != null;
   const value = date ? formatDate(parseSheetDate(entry.old)) : entry.old || "";
@@ -132,8 +135,9 @@ async function undoChangeNow(id) {
   try {
     await writeCells(sheets, source.spreadsheetId, [{ range: cellRange(entry.tab, columns[entry.key], entry.row), value, date }], counter);
   } catch (err) {
-    markFailed([logged], err);
-    throw err;
+    const failure = googleFailure(err, source.account);
+    markFailed([logged], failure);
+    throw failure;
   }
   // The next sync re-reads the row rather than trusting the cached copy.
   getDb().prepare("UPDATE leads SET row_hash = NULL WHERE source_id = ? AND tab = ? AND email = ?").run(entry.source, entry.tab, entry.email);
