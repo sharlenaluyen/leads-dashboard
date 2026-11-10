@@ -470,6 +470,12 @@ select.priority.p1 { border-color: var(--u1); }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 6px 24px 0; font-size: 12px; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
 .legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+/* Classes, not style attributes: the Content-Security-Policy blocks inline styles. */
+.legend .key-u3 { background: var(--u3); }
+.legend .key-u2 { background: var(--u2); }
+.legend .key-u1 { background: var(--u1); }
+.legend .key-u0 { background: var(--u0); }
+.legend .key-turn { background: var(--turn-text); }
 .tab-problems .banner { margin: 10px 16px 0; }
 
 .table-wrap { overflow-x: auto; }

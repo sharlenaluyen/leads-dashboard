@@ -13,10 +13,18 @@ import { generateDrafts, saveDraft } from "./drafts.js";
 import { readChanges, undoChange } from "./changes.js";
 import { addContact, dismissContact, listNewContacts } from "./contacts.js";
 import { checkSignins, refreshSignin } from "./signins.js";
+import { securityHeaders } from "./securityHeaders.js";
+
+// Longest per-batch drafting instructions, in characters (the dialog's
+// textarea has the same maxlength).
+const MAX_INSTRUCTIONS = 2000;
 
 const settings = loadSettings();
 const app = express();
-app.use(express.json({ limit: "1mb" }));
+app.use(securityHeaders(path.join(ROOT, "public", "index.html")));
+// The largest real body is a settings save with 20 saved emails of 5000
+// characters each, which stays well under this.
+app.use(express.json({ limit: "512kb" }));
 
 // This server can write to your sheets and Gmail drafts, so only this page
 // may call it: requests must come to localhost (blocks DNS rebinding) and
@@ -303,7 +311,9 @@ app.post(
     const ids = req.body.leadIds;
     if (!Array.isArray(ids) || !ids.length) throw new Error("Tick at least one row");
     if (ids.length > 40) throw new Error("Draft up to 40 at a time");
-    return generateDrafts(ids.map(Number), String(req.body.instructions || ""), req.body.templateId ? String(req.body.templateId) : null);
+    const instructions = String(req.body.instructions || "");
+    if (instructions.length > MAX_INSTRUCTIONS) throw new Error(`Keep instructions under ${MAX_INSTRUCTIONS} characters`);
+    return generateDrafts(ids.map(Number), instructions, req.body.templateId ? String(req.body.templateId) : null);
   })
 );
 
