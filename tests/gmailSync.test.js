@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyMessage, contactsIn, summarizeMessage, syncAccount } from "../src/gmailSync.js";
+import { applyMessage, automatedKind, contactsIn, summarizeMessage, syncAccount } from "../src/gmailSync.js";
 import { addressWrites, autoStatus, confirmRows, pendingWrites } from "../src/sync.js";
 import { formatDate } from "../src/sheets.js";
 
@@ -383,4 +383,88 @@ test("confirmRows refuses an email-cell write when the cell was edited by hand",
   const updates = [{ leadId: 1, key: "email", range: "'main'!A2", value: "jane@biz.com, bob@biz.com", added: ["bob@biz.com"] }];
   assert.deepEqual(confirmRows(updates, sheetRows, { main: [header, ["jane@biz.com"]] }).ok, updates);
   assert.deepEqual(confirmRows(updates, sheetRows, { main: [header, ["jane@biz.com, cy@biz.com"]] }).moved, new Set([1]));
+});
+
+// --- Bounces and automatic replies -------------------------------------------
+
+// msg() plus extra headers and a snippet.
+function auto(id, opts, headers = {}, snippet = "") {
+  const m = msg(id, opts);
+  m.payload.headers.push(...Object.entries(headers).map(([name, value]) => ({ name, value })));
+  m.snippet = snippet;
+  return m;
+}
+
+test("automatedKind tells bounces and auto-replies from people", () => {
+  const base = { at: 1, to: "me@x.com" };
+  const kind = (from, headers, snippet) => automatedKind(auto("m", { ...base, from }, headers, snippet));
+  assert.equal(kind("Mail Delivery Subsystem <mailer-daemon@googlemail.com>"), "bounce");
+  assert.equal(kind("postmaster@outlook.com"), "bounce");
+  assert.equal(kind("Microsoft Outlook <MicrosoftExchange1@biz.com>", { "Content-Type": 'multipart/report; report-type=delivery-status; boundary="x"' }), "bounce");
+  assert.equal(kind("relay@biz.com", { "X-Failed-Recipients": "a@biz.com" }), "bounce");
+  assert.equal(kind("relay@biz.com", {}, "Mail Delivery Subsystem: address not found"), "bounce", "named in the text");
+  assert.equal(kind("relay@biz.com", { Subject: "Undeliverable: Hello", "Auto-Submitted": "auto-replied" }), "bounce");
+  assert.equal(
+    kind("Mail Delivery Subsystem <mailer-daemon@googlemail.com>", { Subject: "Delivery Status Notification (Delay)" }),
+    "auto",
+    "a delay notice isn't a bounce yet"
+  );
+  assert.equal(kind("a@biz.com", { Subject: "Automatic reply: Hello" }), "auto");
+  assert.equal(kind("a@biz.com", { Subject: "Out of Office: back Monday" }), "auto");
+  assert.equal(kind("a@biz.com", { "Auto-Submitted": "auto-replied", Subject: "Re: Hello" }), "auto", "Gmail's vacation responder");
+  assert.equal(kind("a@biz.com", { "X-Autoreply": "yes" }), "auto");
+  assert.equal(kind("a@biz.com", { Subject: "Re: undeliverable package?" }), null, "a person's subject alone isn't enough");
+  assert.equal(kind("a@biz.com", { Subject: "Re: I'll be out of office next week" }), null);
+  assert.equal(kind("a@biz.com", { "Auto-Submitted": "no" }), null);
+});
+
+test("a bounce in a lead's thread marks it bounced, not replied; an out-of-office is ignored", async () => {
+  const mailbox = [
+    auto("b1", { at: 6000, from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", to: "me@x.com", thread: "t-1" }, { "X-Failed-Recipients": "a@biz.com" }),
+    auto("o1", { at: 6000, from: "b@biz.com", to: "me@x.com", thread: "t-2" }, { Subject: "Automatic reply: Hello", "Auto-Submitted": "auto-replied" }),
+  ];
+  const history = [
+    { messagesAdded: [{ message: { id: "b1", threadId: "t-1", labelIds: ["INBOX"] } }] },
+    { messagesAdded: [{ message: { id: "o1", threadId: "t-2", labelIds: ["INBOX"] } }] },
+  ];
+  const leads = [
+    { id: 1, email: "a@biz.com", gmail_checked: 1, last_email_at: 10, last_email_dir: "sent" },
+    { id: 2, email: "b@biz.com", gmail_checked: 1, last_email_at: 10, last_email_dir: "sent" },
+  ];
+  const threads = new Map([[1, new Set(["t-1"])], [2, new Set(["t-2"])]]);
+  const { changes, replies, contacts } = await syncAccount(
+    fakeGmail(mailbox, { history }),
+    { leads, threads, cursor: { history_id: "900", synced_at: 0 } },
+    new Counter()
+  );
+  assert.equal(changes.get(1).last_email_dir, "bounced");
+  assert.equal(changes.get(1).last_email_at, 6000);
+  assert.equal(changes.has(2), false, "the out-of-office changes nothing");
+  assert.equal(replies.size, 0, "neither counts as a reply, so neither reopens a Closed row");
+  assert.equal(contacts.size, 0);
+});
+
+test("a bounce outside the lead's thread finds the lead by the failed address", async () => {
+  const mailbox = [auto("b1", { at: 6000, from: "postmaster@biz.com", to: "me@x.com" }, { "X-Failed-Recipients": "a@biz.com" })];
+  const history = [{ messagesAdded: [{ message: { id: "b1", threadId: "t-b1", labelIds: ["INBOX"] } }] }];
+  const lead = { id: 1, email: "a@biz.com", gmail_checked: 1, last_email_at: 10, last_email_dir: "sent" };
+  const { changes } = await syncAccount(fakeGmail(mailbox, { history }), { leads: [lead], cursor: { history_id: "900", synced_at: 0 } }, new Counter());
+  assert.equal(changes.get(1).last_email_dir, "bounced");
+});
+
+test("a first lookup passes over out-of-office replies to the newest real email", async () => {
+  const mailbox = [
+    msg("s1", { at: 1000, from: "me@x.com", to: "a@biz.com", sent: true }),
+    auto("o1", { at: 2000, from: "a@biz.com", to: "me@x.com" }, { Subject: "Out of office" }),
+  ];
+  const { changes } = await syncAccount(fakeGmail(mailbox), { leads: [{ id: 1, email: "a@biz.com", gmail_checked: 0 }] }, new Counter());
+  const c = changes.get(1);
+  assert.equal(c.last_email_dir, "sent");
+  assert.equal(c.last_email_at, 1000);
+  assert.equal(c.last_followed_up_at, 1000);
+});
+
+test("a bounced lead is Pending action", () => {
+  assert.equal(autoStatus({ last_email_dir: "bounced" }, "Awaiting Reply"), "Pending action");
+  assert.equal(autoStatus({ last_email_dir: "bounced" }, "Closed - interested"), null, "a bounce doesn't reopen");
 });

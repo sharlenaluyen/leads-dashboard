@@ -449,6 +449,7 @@ main { padding: 8px 24px; display: grid; gap: 16px; }
 }
 .pill.turn { background: var(--turn-bg); color: var(--turn-text); }
 .pill.urgent { background: var(--u3-bg); color: var(--u3); font-weight: 600; }
+.pill.bounced { background: var(--danger-bg); color: var(--danger); font-weight: 600; }
 .source-head { background: var(--accent-soft); }
 .source-name { color: var(--accent); }
 
@@ -484,11 +485,13 @@ td.cb input, th.cb input { cursor: pointer; }
 .when { white-space: nowrap; }
 .dir { font-size: 12px; margin-left: 6px; }
 .dir.received { color: var(--turn-text); background: var(--turn-bg); padding: 1px 6px; border-radius: 999px; }
+.dir.bounced { color: var(--danger); background: var(--danger-bg); padding: 1px 6px; border-radius: 999px; }
 .age.stale { color: var(--stale); }
 .age.very-stale { color: var(--very-stale); font-weight: 500; }
 tr.closed td { opacity: 0.55; }
 .action { font-size: 12px; padding: 2px 8px; border-radius: 999px; white-space: nowrap; background: var(--surface-2); color: var(--muted); }
 .action.a-reply { background: var(--turn-bg); color: var(--turn-text); font-weight: 600; }
+.action.a-bounced { background: var(--danger-bg); color: var(--danger); font-weight: 600; }
 .action.a-send { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .action.a-nudge { background: var(--u3-bg); color: var(--u3); font-weight: 600; }
 .action.a-first { background: var(--u2-bg); color: var(--warn-text); }

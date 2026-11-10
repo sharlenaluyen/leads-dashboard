@@ -4,7 +4,7 @@ import { getDb } from "./db.js";
 import { audit, getAccountInfo, gmailClientFor, withRetry } from "./google.js";
 import { draftEmails } from "./drafter/index.js";
 import { setLeadFieldNow } from "./edits.js";
-import { mapLimit } from "./gmailSync.js";
+import { automatedKind, mapLimit } from "./gmailSync.js";
 import { withSheetLock } from "./lock.js";
 
 const THREAD_MESSAGES = 6;
@@ -18,11 +18,12 @@ function getLead(id) {
 }
 
 // The last few real messages of the lead's newest thread, oldest first.
+// Bounces and automatic replies are left out: the lead didn't write them.
 async function loadThread(gmail, lead) {
   if (!lead.thread_id) return [];
   const { data } = await withRetry(() => gmail.users.threads.get({ userId: "me", id: lead.thread_id, format: "full" }));
   return (data.messages || [])
-    .filter((m) => !(m.labelIds || []).includes("DRAFT"))
+    .filter((m) => !(m.labelIds || []).includes("DRAFT") && !automatedKind(m))
     .slice(-THREAD_MESSAGES)
     .map((m) => ({
       dir: (m.labelIds || []).includes("SENT") ? "sent" : "received",
