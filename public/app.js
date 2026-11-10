@@ -264,6 +264,43 @@ async function sync() {
   await load();
 }
 
+// Settings → Hard reset: the server deletes its SQLite cache and syncs from
+// scratch (like npm run rebuild, without stopping the server). Asks first in
+// #reset-dialog, where No is the default.
+function confirmHardReset() {
+  if (syncing) {
+    toast("A sync is running", { detail: "Try the hard reset again once it finishes.", kind: "error" });
+    return;
+  }
+  $("#reset-dialog").showModal();
+  $("#reset-no").focus();
+}
+
+async function hardReset() {
+  if (syncing) return;
+  syncing = true;
+  const btn = $("#reset-btn");
+  const syncBtn = $("#sync-btn");
+  btn.disabled = syncBtn.disabled = true;
+  btn.replaceChildren(el("span", { class: "spinner" }), " Resetting…");
+  syncBtn.replaceChildren(el("span", { class: "spinner" }), " Syncing");
+  toast("Hard reset running…", { detail: "Clearing cached data and syncing from scratch. Don't edit the spreadsheet or draft emails until this finishes.", kind: "busy", sticky: true });
+  try {
+    const r = await api("POST", "/api/reset");
+    if (r && r.ok === false) toast("Hard reset finished with errors", { detail: "See the banner for details. It's safe to edit the spreadsheet.", kind: "error" });
+    else toast("Hard reset finished", { detail: "Everything was synced again from scratch.", kind: "done" });
+  } catch (err) {
+    toast("Hard reset failed", { detail: err.message, kind: "error" });
+    showBanner(err.message, true);
+  } finally {
+    btn.disabled = syncBtn.disabled = false;
+    btn.textContent = "Hard reset";
+    syncBtn.textContent = "Sync";
+    syncing = false;
+  }
+  await load().catch((err) => showBanner(err.message, true));
+}
+
 // Auto-sync (Settings → Sync). Timed syncs run only while the page is
 // visible, and wait while a dialog is open or an edit is running, so a sync
 // never starts under someone mid-change.
@@ -1721,6 +1758,12 @@ $("#settings-dialog").addEventListener("cancel", (e) => {
   btn.focus();
 });
 $("#settings-dialog").addEventListener("close", closeColorPicker);
+$("#reset-btn").addEventListener("click", confirmHardReset);
+$("#reset-no").addEventListener("click", () => $("#reset-dialog").close());
+$("#reset-yes").addEventListener("click", () => {
+  $("#reset-dialog").close();
+  hardReset();
+});
 // Columns: the ticked boxes are the ones shown; the setting lists the hidden ones.
 for (const box of columnBoxes()) {
   box.addEventListener("change", () =>

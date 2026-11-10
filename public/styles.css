@@ -659,6 +659,11 @@ legend { font-size: 13px; color: var(--muted); padding: 0 4px; }
 .inline { display: flex; gap: 6px; }
 
 button.alert { border-color: var(--danger); color: var(--danger); font-weight: 600; }
+.setting.danger-zone { cursor: default; }
+.setting.danger-zone > button { flex: none; }
+.confirm-dialog { width: min(440px, calc(100vw - 32px)); padding: 20px; }
+.confirm-dialog h2 { margin: 0 0 8px; }
+.confirm-dialog p { margin: 0 0 8px; }
 .signin { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
 .signin-who { flex: 1; min-width: 0; }
 .signin-who .sub { font-size: 12px; overflow-wrap: anywhere; }

@@ -7,7 +7,7 @@ import { withSheetLock } from "./lock.js";
 import { getDb } from "./db.js";
 import { CallCounter, explainGoogleError, getAccountInfo, getConnectedAliases, sheetsClientFor } from "./google.js";
 import { listTabs, parseSheetDate, spreadsheetIdFrom } from "./sheets.js";
-import { runSync } from "./sync.js";
+import { runReset, runSync } from "./sync.js";
 import { setLeadField } from "./edits.js";
 import { generateDrafts, saveDraft } from "./drafts.js";
 import { readChanges, undoChange } from "./changes.js";
@@ -140,6 +140,10 @@ app.patch(
 );
 
 app.post("/api/sync", wrap(() => runSync()));
+
+// Settings → Hard reset: delete the SQLite cache and sync from scratch, the
+// same as npm run rebuild but without stopping the server.
+app.post("/api/reset", wrap(() => runReset()));
 
 app.patch(
   "/api/leads/:id",

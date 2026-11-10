@@ -350,8 +350,26 @@
           <button type="button" class="color-btn" id="dueSoonColor-input" aria-haspopup="dialog" aria-expanded="false"><span class="swatch"></span><span class="color-name">Default</span></button>
         </div>
       </div>
+
+      <h3>Danger zone</h3>
+      <div class="setting danger-zone">
+        <span class="setting-text"><strong>Hard reset</strong><span class="sub">Clears the dashboard's cached data and syncs again from scratch, for when what you see looks stale or wrong. Your spreadsheets, Gmail and settings aren't touched.</span></span>
+        <button type="button" id="reset-btn" class="alert">Hard reset</button>
+      </div>
       <p id="settings-error" class="error" hidden></p>
     </div>
+  </dialog>
+
+  <dialog id="reset-dialog" class="confirm-dialog" aria-labelledby="reset-title">
+    <form method="dialog">
+      <h2 id="reset-title">Hard reset?</h2>
+      <p>This clears the dashboard's cached data and syncs everything again from your spreadsheets and Gmail. It can take a minute.</p>
+      <p class="muted">Your spreadsheets, Gmail, sources, settings, stars and change history are kept. Dismissed new-contact suggestions come back.</p>
+      <div class="dialog-actions">
+        <button type="button" id="reset-no" autofocus>No</button>
+        <button type="button" id="reset-yes" class="alert">Yes, reset</button>
+      </div>
+    </form>
   </dialog>
 
   <template id="section-tpl">

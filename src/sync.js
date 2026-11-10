@@ -1,6 +1,6 @@
 import { extractEmailAddress } from "multi-gmail-mcp/src/gmail.js";
 import { addCustomStatuses, loadSettings, loadSources, statusesFor } from "./config.js";
-import { getDb, transaction } from "./db.js";
+import { deleteDb, getDb, transaction } from "./db.js";
 import { CallCounter, audit, explainGoogleError, gmailClientFor, getAccountInfo, sheetsClientFor } from "./google.js";
 import { syncAccount } from "./gmailSync.js";
 import { logChanges, markFailed } from "./changes.js";
@@ -495,12 +495,32 @@ async function writeBack(source, sheetRows, counter, summary, { adds = [] } = {}
 
 let running = null;
 
+// The sync itself; tests swap in a fake so the timing of runSync/runReset can
+// be checked without Google (see tests/reset.test.js).
+let syncImpl = () => doSync();
+export function setSyncForTests(fn) {
+  syncImpl = fn || (() => doSync());
+}
+
 // Sheets (who the leads are) -> Gmail (what happened) -> sheets (the email
 // columns and auto statuses) -> the dashboard, which shows only what the
 // sheet holds. Concurrent calls share one run, and it waits for (and holds
 // off) any other spreadsheet write; see lock.js.
 export function runSync() {
-  if (!running) running = withSheetLock(doSync).finally(() => (running = null));
+  if (!running) running = withSheetLock(() => syncImpl()).finally(() => (running = null));
+  return running;
+}
+
+// Hard reset (Settings → Hard reset, and npm run rebuild): delete the SQLite
+// cache and sync from scratch. Runs inside the sheet lock so no sync or edit
+// is using the database while it's deleted, and becomes `running` so a sync
+// asked for meanwhile shares it instead of queueing a second one.
+export async function runReset() {
+  while (running) await running.catch(() => {});
+  running = withSheetLock(() => {
+    deleteDb();
+    return syncImpl();
+  }).finally(() => (running = null));
   return running;
 }
 

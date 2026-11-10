@@ -3,11 +3,11 @@
 //
 // Refuses while the dashboard server is running: the server keeps the old
 // database file open, so it would carry on with the deleted copy, and both
-// would sync and write to the sheets at once.
+// would sync and write to the sheets at once. With the server running, use
+// Settings → Hard reset instead, which does the same thing inside it.
 import fs from "fs";
 import { SERVER_PID_PATH, loadSettings } from "./config.js";
-import { DB_PATH } from "./db.js";
-import { runSync } from "./sync.js";
+import { runReset } from "./sync.js";
 
 // The pid a running server recorded, if that process is still alive.
 function serverPid() {
@@ -41,14 +41,13 @@ const pid = serverPid();
 if (pid || (await portAnswers(port))) {
   console.error(
     `The dashboard server is running (${pid ? `pid ${pid}` : `something answers on port ${port}`}). ` +
-      "Stop npm start / npm run dev first, then run npm run rebuild again." +
+      "Use Settings → Hard reset in the dashboard, or stop npm start / npm run dev and run npm run rebuild again." +
       (pid ? `\nIf no server is running, delete ${SERVER_PID_PATH} and try again.` : "")
   );
   process.exit(1);
 }
 fs.rmSync(SERVER_PID_PATH, { force: true });
 
-for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(`${DB_PATH}${suffix}`, { force: true });
-const result = await runSync();
+const result = await runReset();
 console.log(JSON.stringify(result, null, 2));
 process.exit(result.ok ? 0 : 1);
