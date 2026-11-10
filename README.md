@@ -489,7 +489,8 @@ using old sign-ins until it restarts.
 
 ```bash
 npm test           # parsing, header checks, Gmail sync logic, prompt building, change log, write lock
-npm run rebuild    # wipe the SQLite cache and resync (stop the server first)
+npm run rebuild    # wipe the SQLite cache and resync (stop the server first;
+                   # with it running, use Settings → Hard reset instead)
 npm run dev        # restart on file changes
 ```
 

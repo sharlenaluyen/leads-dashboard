@@ -137,6 +137,21 @@ export function getDb() {
   return db;
 }
 
+// Throws the cache away: closes the open handle and deletes the file and its
+// WAL/SHM companions. The next getDb() starts an empty database. Callers must
+// hold the sheet lock so nothing is mid-query (see runReset in sync.js).
+export function deleteDb() {
+  if (db) {
+    try {
+      db.close();
+    } catch {
+      /* already closed */
+    }
+    db = null;
+  }
+  for (const suffix of ["", "-wal", "-shm"]) fs.rmSync(`${DB_PATH}${suffix}`, { force: true });
+}
+
 // For tests: an in-memory database with the same schema.
 export function openMemoryDb() {
   db = new DatabaseSync(":memory:");

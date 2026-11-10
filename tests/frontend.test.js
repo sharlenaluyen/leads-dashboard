@@ -744,3 +744,85 @@ test("Settings adds a custom email body without touching an unsaved edit in anot
   assert.equal(card.querySelector(".template-name").textContent, "Second");
   assert.match(card.querySelector(".template-badge").textContent, /Saved/);
 });
+
+// --- Hard reset ------------------------------------------------------------
+
+async function openResetConfirm(routes = {}) {
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A" })])] }), routes);
+  page.$("#settings-btn").click();
+  page.$("#reset-btn").click();
+  await page.settle();
+  return page;
+}
+
+test("Hard reset asks first, and No leaves everything alone", async () => {
+  page = await openResetConfirm();
+  assert.equal(page.$("#reset-dialog").open, true);
+  page.$("#reset-no").click();
+  await page.settle();
+  assert.equal(page.$("#reset-dialog").open, false);
+  assert.equal(page.requests.filter((r) => r.url === "/api/reset").length, 0);
+});
+
+test("Yes runs the hard reset, then reloads the leads", async () => {
+  page = await openResetConfirm({ "POST /api/reset": () => ({ ok: true }) });
+  const loadsBefore = page.requests.filter((r) => r.url === "/api/state").length;
+  page.$("#reset-yes").click();
+  await page.settle();
+  assert.equal(page.$("#reset-dialog").open, false);
+  assert.equal(page.requests.filter((r) => r.method === "POST" && r.url === "/api/reset").length, 1);
+  assert.ok(page.requests.filter((r) => r.url === "/api/state").length > loadsBefore);
+  assert.equal(page.$("#reset-btn").disabled, false);
+  assert.match(page.$("#toast").textContent, /Hard reset finished/);
+});
+
+test("a failed hard reset says why", async () => {
+  page = await openResetConfirm({
+    "POST /api/reset": () => {
+      throw { status: 400, error: "Google sign-in for work has expired" };
+    },
+  });
+  page.$("#reset-yes").click();
+  await page.settle();
+  assert.match(page.$("#toast").textContent, /Hard reset failed.*expired/);
+  assert.equal(page.$("#reset-btn").disabled, false);
+});
+
+test("while a hard reset runs, its button and Sync are disabled", async () => {
+  let release;
+  page = await openResetConfirm({ "POST /api/reset": () => new Promise((r) => (release = () => r({ ok: true }))) });
+  page.$("#reset-yes").click();
+  await page.settle();
+  assert.equal(page.$("#reset-btn").disabled, true);
+  assert.match(page.$("#reset-btn").textContent, /Resetting/);
+  assert.equal(page.$("#sync-btn").disabled, true);
+  release();
+  await page.settle();
+  assert.equal(page.$("#reset-btn").disabled, false);
+  assert.equal(page.$("#reset-btn").textContent, "Hard reset");
+  assert.equal(page.$("#sync-btn").disabled, false);
+});
+
+test("Hard reset doesn't ask while a sync is running", async () => {
+  let release;
+  page = await boot(appState({ sources: [source("a", [lead({ businessName: "A" })])] }), {
+    "POST /api/sync": () => new Promise((r) => (release = () => r({ ok: true }))),
+  });
+  page.$("#sync-btn").click();
+  await page.settle();
+  page.$("#settings-btn").click();
+  page.$("#reset-btn").click();
+  await page.settle();
+  assert.equal(page.$("#reset-dialog").open, false);
+  assert.match(page.$("#toast").textContent, /A sync is running/);
+  release();
+  await page.settle();
+  assert.equal(page.requests.filter((r) => r.url === "/api/reset").length, 0);
+});
+
+test("a hard reset whose sync reported problems says so", async () => {
+  page = await openResetConfirm({ "POST /api/reset": () => ({ ok: false }) });
+  page.$("#reset-yes").click();
+  await page.settle();
+  assert.match(page.$("#toast").textContent, /Hard reset finished with errors/);
+});
