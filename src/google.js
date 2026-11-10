@@ -15,6 +15,12 @@ export const audit = createAuditLogger("leads-dashboard");
 
 const clientCache = new Map();
 
+// googleapis has no request timeout by default, so one call that never
+// answers would hold the sheet lock (lock.js) and freeze every later write.
+// Applies to each attempt, including the OAuth token refresh; a timed-out
+// call fails rather than being retried.
+export const REQUEST_TIMEOUT_MS = 30_000;
+
 // Cached per account *and* refresh token: accounts.json is re-read on every
 // call, so after a sign-in (the dashboard's Google sign-ins button, or
 // ./refresh-tokens.sh) the next request uses the new sign-in
@@ -24,17 +30,18 @@ function clientFor(product, alias, build) {
   const key = `${product}:${info.alias}:${info.refresh_token}`;
   if (!clientCache.has(key)) {
     const auth = createAuthClient(info.alias, { OAuth2: google.auth.OAuth2, requiredScopes: REQUIRED_SCOPES[product] });
+    auth.transporter.defaults = { ...auth.transporter.defaults, timeout: REQUEST_TIMEOUT_MS };
     clientCache.set(key, build(auth));
   }
   return clientCache.get(key);
 }
 
 export function sheetsClientFor(alias) {
-  return clientFor("sheets", alias, (auth) => google.sheets({ version: "v4", auth }));
+  return clientFor("sheets", alias, (auth) => google.sheets({ version: "v4", auth, timeout: REQUEST_TIMEOUT_MS }));
 }
 
 export function gmailClientFor(alias) {
-  return clientFor("gmail", alias, (auth) => google.gmail({ version: "v1", auth }));
+  return clientFor("gmail", alias, (auth) => google.gmail({ version: "v1", auth, timeout: REQUEST_TIMEOUT_MS }));
 }
 
 // Counts Google API calls made during one sync, so the UI can show what a

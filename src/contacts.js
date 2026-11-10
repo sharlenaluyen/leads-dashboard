@@ -5,6 +5,7 @@ import { cellRange, emailsIn, isEmail, locateHeaders, quoteTab, readRange, write
 import { logChanges, markFailed } from "./changes.js";
 import { withSheetLock } from "./lock.js";
 import { syncAfterChange } from "./sync.js";
+import { UserError } from "./errors.js";
 
 // The review list: people in your mail who aren't in any sheet yet.
 export function listNewContacts() {
@@ -15,7 +16,7 @@ export function listNewContacts() {
 
 export function dismissContact(account, email) {
   const r = getDb().prepare("UPDATE new_contacts SET dismissed = 1 WHERE account = ? AND email = ?").run(account, String(email).toLowerCase());
-  if (!r.changes) throw new Error("That contact isn't in the list any more.");
+  if (!r.changes) throw new UserError("That contact isn't in the list any more.");
   return { ok: true };
 }
 
@@ -35,14 +36,14 @@ export async function addContact(input) {
 }
 
 async function writeContactRow({ email, sourceId, tab, businessName }) {
-  if (!loadSettings().writeBack) throw new Error("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
+  if (!loadSettings().writeBack) throw new UserError("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
   const address = String(email || "").trim().toLowerCase();
-  if (!isEmail(address)) throw new Error("That isn't a valid email address.");
+  if (!isEmail(address)) throw new UserError("That isn't a valid email address.");
   const source = getSource(sourceId);
-  if (!source.tabs.includes(tab)) throw new Error(`"${tab}" isn't one of ${source.name}'s tabs.`);
+  if (!source.tabs.includes(tab)) throw new UserError(`"${tab}" isn't one of ${source.name}'s tabs.`);
   const db = getDb();
   if (db.prepare("SELECT 1 FROM leads WHERE source_id = ? AND tab = ? AND email = ?").get(source.id, tab, address)) {
-    throw new Error(`${address} is already in "${tab}".`);
+    throw new UserError(`${address} is already in "${tab}".`);
   }
 
   const sheets = sheetsClientFor(source.account);
@@ -52,9 +53,9 @@ async function writeContactRow({ email, sourceId, tab, businessName }) {
   // inside a block of rows separated by blank lines.
   const values = await readRange(sheets, source.spreadsheetId, quoteTab(tab), counter);
   const { columns, missing } = locateHeaders(values);
-  if (missing.length) throw new Error(`Tab "${tab}" is missing columns: ${missing.join(", ")}`);
+  if (missing.length) throw new UserError(`Tab "${tab}" is missing columns: ${missing.join(", ")}`);
   // The cache only learns about rows at the next sync; the sheet knows now.
-  if (values.some((r) => emailsIn(r?.[columns.email]).includes(address))) throw new Error(`${address} is already in "${tab}".`);
+  if (values.some((r) => emailsIn(r?.[columns.email]).includes(address))) throw new UserError(`${address} is already in "${tab}".`);
   const row = values.length + 1;
   const name = String(businessName || "").trim() || address.split("@")[1];
   const cells = [
@@ -73,7 +74,7 @@ async function writeContactRow({ email, sourceId, tab, businessName }) {
     );
   } catch (err) {
     markFailed(logged, err);
-    if (/exceeds grid limits/i.test(err?.message || "")) throw new Error(`Tab "${tab}" has no empty rows left. Add rows at the bottom in Sheets, then try again.`);
+    if (/exceeds grid limits/i.test(err?.message || "")) throw new UserError(`Tab "${tab}" has no empty rows left. Add rows at the bottom in Sheets, then try again.`);
     throw err;
   }
   audit({

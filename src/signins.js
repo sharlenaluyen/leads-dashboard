@@ -3,6 +3,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
 import { DRIVE_READONLY_SCOPE, loadAccounts, loadCredentials } from "google-mcp-accounts";
+import { UserError } from "./errors.js";
 
 // The same checks and sign-in as google-mcp-accounts' ./refresh-tokens.sh,
 // for the dashboard's "Google sign-ins" button. auth.js stays the only
@@ -59,7 +60,7 @@ let pending = null;
 // accepts the same Google account (auth.js --expect refuses any other).
 export async function refreshSignin(alias) {
   const acct = loadAccounts()[alias];
-  if (!acct) throw new Error(`No connected Google account called "${alias}"`);
+  if (!acct) throw new UserError(`No connected Google account called "${alias}"`);
   if (pending) {
     pending.cancelled = true;
     pending.child.kill();
@@ -86,12 +87,12 @@ export async function refreshSignin(alias) {
   clearTimeout(timer);
   if (pending === run) pending = null;
 
-  if (run.cancelled) throw new Error(`Sign-in for "${alias}" was replaced by a newer one. Its old sign-in is unchanged.`);
-  if (run.timedOut) throw new Error(`Sign-in for "${alias}" wasn't finished within 5 minutes. Its old sign-in is unchanged.`);
+  if (run.cancelled) throw new UserError(`Sign-in for "${alias}" was replaced by a newer one. Its old sign-in is unchanged.`);
+  if (run.timedOut) throw new UserError(`Sign-in for "${alias}" wasn't finished within 5 minutes. Its old sign-in is unchanged.`);
   if (code !== 0) {
     // auth.js prints a one-line reason last (state mismatch, no refresh token, ...).
     const reason = error || output.trim().split("\n").pop() || `auth.js exited with code ${code}`;
-    throw new Error(`"${alias}" wasn't signed in again: ${reason}`);
+    throw new UserError(`"${alias}" wasn't signed in again: ${reason}`);
   }
 
   const after = loadAccounts()[alias]?.email;

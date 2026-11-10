@@ -3,8 +3,8 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 import { BUILT_IN_STATUSES, PRIORITY_LABELS, ROOT, SERVER_PID_PATH, dropStarsFor, getSource, loadStars, setStar, starKey, loadSettings, loadSources, reorderSources, saveSettings, saveSources, statusesFor, updateSource } from "./config.js";
-import { withSheetLock } from "./lock.js";
-import { getDb } from "./db.js";
+import { sheetLockIdle, withSheetLock } from "./lock.js";
+import { closeDb, getDb } from "./db.js";
 import { CallCounter, explainGoogleError, getAccountInfo, getConnectedAliases, sheetsClientFor } from "./google.js";
 import { listTabs, parseSheetDate, spreadsheetIdFrom } from "./sheets.js";
 import { runReset, runSync } from "./sync.js";
@@ -14,6 +14,7 @@ import { readChanges, undoChange } from "./changes.js";
 import { addContact, dismissContact, listNewContacts } from "./contacts.js";
 import { checkSignins, refreshSignin } from "./signins.js";
 import { securityHeaders } from "./securityHeaders.js";
+import { UserError } from "./errors.js";
 
 // Longest per-batch drafting instructions, in characters (the dialog's
 // textarea has the same maxlength).
@@ -38,11 +39,20 @@ app.use((req, res, next) => {
 
 app.use(express.static(path.join(ROOT, "public")));
 
+// A UserError is a problem with the request and its message is the answer.
+// Anything else is a bug or a failed outside call (Google, Claude): it's
+// logged with its stack and answered with a 500, still carrying the message
+// so the page can show what went wrong.
 const wrap = (fn) => async (req, res) => {
   try {
     res.json(await fn(req, res));
   } catch (err) {
-    res.status(err.status || 400).json({ error: err.message || String(err) });
+    if (err instanceof UserError) {
+      console.warn(`${req.method} ${req.path}: ${err.message}`);
+      return res.status(400).json({ error: err.message });
+    }
+    console.error(`${req.method} ${req.path} failed:`, err);
+    res.status(500).json({ error: err?.message || String(err) });
   }
 };
 
@@ -166,9 +176,9 @@ app.patch(
 app.put(
   "/api/leads/:id/star",
   wrap((req) => {
-    if (typeof req.body.starred !== "boolean") throw new Error("starred must be true or false");
+    if (typeof req.body.starred !== "boolean") throw new UserError("starred must be true or false");
     const l = getDb().prepare("SELECT source_id, tab, email FROM leads WHERE id = ?").get(Number(req.params.id));
-    if (!l) throw new Error("That row is no longer in the dashboard. Reload the page.");
+    if (!l) throw new UserError("That row is no longer in the dashboard. Reload the page.");
     setStar({ source: l.source_id, tab: l.tab, email: l.email }, req.body.starred);
     return { starred: req.body.starred };
   })
@@ -180,13 +190,13 @@ app.post(
   "/api/sources/inspect",
   wrap(async (req) => {
     const spreadsheetId = spreadsheetIdFrom(req.body.url);
-    if (!spreadsheetId) throw new Error("That doesn't look like a Google Sheets link");
+    if (!spreadsheetId) throw new UserError("That doesn't look like a Google Sheets link");
     const account = getAccountInfo(req.body.account).alias;
     try {
       const info = await listTabs(sheetsClientFor(account), spreadsheetId, new CallCounter());
       return { spreadsheetId, ...info };
     } catch (err) {
-      throw new Error(explainGoogleError(err, account));
+      throw new UserError(explainGoogleError(err, account));
     }
   })
 );
@@ -201,7 +211,7 @@ function slug(name) {
 
 function validTabs(tabs) {
   if (!Array.isArray(tabs) || !tabs.length || !tabs.every((t) => typeof t === "string" && t)) {
-    throw new Error("Pick at least one tab");
+    throw new UserError("Pick at least one tab");
   }
   return [...new Set(tabs)];
 }
@@ -210,9 +220,9 @@ app.post(
   "/api/sources",
   wrap((req) => {
     const { name, url, account, tabs } = req.body;
-    if (!name?.trim()) throw new Error("Give the section a name");
+    if (!name?.trim()) throw new UserError("Give the section a name");
     const spreadsheetId = spreadsheetIdFrom(url);
-    if (!spreadsheetId) throw new Error("That doesn't look like a Google Sheets link");
+    if (!spreadsheetId) throw new UserError("That doesn't look like a Google Sheets link");
     const source = {
       id: slug(name),
       name: name.trim(),
@@ -236,7 +246,7 @@ app.patch(
   wrap((req) => {
     const change = {};
     if (req.body.name !== undefined) {
-      if (!String(req.body.name).trim()) throw new Error("Name can't be empty");
+      if (!String(req.body.name).trim()) throw new UserError("Name can't be empty");
       change.name = String(req.body.name).trim();
     }
     if (req.body.tabs !== undefined) change.tabs = validTabs(req.body.tabs);
@@ -262,9 +272,9 @@ app.post(
   wrap((req) => {
     const source = getSource(req.params.id);
     const name = String(req.body.name || "").trim();
-    if (!name) throw new Error("Status name can't be empty");
-    if (name.length > 40) throw new Error("Keep status names under 40 characters");
-    if (statusesFor(source).some((s) => s.toLowerCase() === name.toLowerCase())) throw new Error("That status already exists");
+    if (!name) throw new UserError("Status name can't be empty");
+    if (name.length > 40) throw new UserError("Keep status names under 40 characters");
+    if (statusesFor(source).some((s) => s.toLowerCase() === name.toLowerCase())) throw new UserError("That status already exists");
     return updateSource(source.id, { customStatuses: [...(source.customStatuses || []), name] });
   })
 );
@@ -276,7 +286,7 @@ app.delete(
     const inUse = getDb()
       .prepare("SELECT COUNT(*) AS n FROM leads WHERE source_id = ? AND lower(follow_up_status) = lower(?)")
       .get(source.id, req.params.name).n;
-    if (inUse) throw new Error(`${inUse} row(s) still use "${req.params.name}". Change them first.`);
+    if (inUse) throw new UserError(`${inUse} row(s) still use "${req.params.name}". Change them first.`);
     return updateSource(source.id, {
       customStatuses: (source.customStatuses || []).filter((s) => s.toLowerCase() !== req.params.name.toLowerCase()),
     });
@@ -309,10 +319,10 @@ app.post(
   "/api/drafts/generate",
   wrap((req) => {
     const ids = req.body.leadIds;
-    if (!Array.isArray(ids) || !ids.length) throw new Error("Tick at least one row");
-    if (ids.length > 40) throw new Error("Draft up to 40 at a time");
+    if (!Array.isArray(ids) || !ids.length) throw new UserError("Tick at least one row");
+    if (ids.length > 40) throw new UserError("Draft up to 40 at a time");
     const instructions = String(req.body.instructions || "");
-    if (instructions.length > MAX_INSTRUCTIONS) throw new Error(`Keep instructions under ${MAX_INSTRUCTIONS} characters`);
+    if (instructions.length > MAX_INSTRUCTIONS) throw new UserError(`Keep instructions under ${MAX_INSTRUCTIONS} characters`);
     return generateDrafts(ids.map(Number), instructions, req.body.templateId ? String(req.body.templateId) : null);
   })
 );
@@ -322,7 +332,7 @@ app.post(
   wrap((req) => saveDraft(Number(req.body.leadId), { subject: req.body.subject, body: req.body.body }))
 );
 
-app.listen(settings.port, "127.0.0.1", () => {
+const server = app.listen(settings.port, "127.0.0.1", () => {
   // Lets npm run rebuild see that the server is running (see rebuild.js).
   fs.mkdirSync(path.dirname(SERVER_PID_PATH), { recursive: true });
   fs.writeFileSync(SERVER_PID_PATH, `${process.pid}\n`);
@@ -338,4 +348,44 @@ process.on("exit", () => {
     /* already gone */
   }
 });
-for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => process.exit(0));
+// Something async failed with nobody awaiting it. Log it and keep serving
+// rather than crashing mid-write (Node's default).
+process.on("unhandledRejection", (reason) => {
+  console.error("Unhandled promise rejection:", reason);
+});
+
+// On Ctrl-C, stop taking requests and let any spreadsheet write in progress
+// (a sync, or an edit between logging the change and writing it) finish,
+// then close SQLite cleanly. Gives up after SHUTDOWN_WAIT_MS; a second Ctrl-C
+// exits at once.
+const SHUTDOWN_WAIT_MS = 15_000;
+let stopping = false;
+
+function stop(signal) {
+  if (stopping) {
+    console.error(`${signal} again: exiting without waiting.`);
+    process.exit(1);
+  }
+  stopping = true;
+  console.log("Stopping: waiting for spreadsheet writes to finish (Ctrl-C again to exit now)…");
+  server.close();
+  const giveUp = setTimeout(() => {
+    console.error(`A spreadsheet write was still running after ${SHUTDOWN_WAIT_MS / 1000} seconds; exiting anyway. Sync again after restarting to check the sheet.`);
+    finish(1);
+  }, SHUTDOWN_WAIT_MS);
+  sheetLockIdle().then(() => {
+    clearTimeout(giveUp);
+    finish(0);
+  });
+}
+
+function finish(code) {
+  try {
+    closeDb();
+  } catch (err) {
+    console.error("Closing the database failed:", err);
+  }
+  process.exit(code);
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) process.on(signal, () => stop(signal));

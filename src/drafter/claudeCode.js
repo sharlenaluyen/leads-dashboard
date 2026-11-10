@@ -1,6 +1,15 @@
 import { spawn } from "child_process";
 import os from "os";
 
+// After a timeout the process gets SIGTERM, then SIGKILL if it's still
+// running this long after.
+const KILL_GRACE_MS = 5000;
+// Drafts for a full batch come to well under 1 MB; anything past this is
+// runaway output and the process is stopped.
+const MAX_STDOUT = 5 * 1024 * 1024;
+// Only the start of stderr is shown in an error message.
+const MAX_STDERR = 64 * 1024;
+
 /**
  * Runs the locally installed Claude Code headless (`claude -p`), billed to
  * the user's Claude plan. Every tool is disabled and no MCP servers load, so
@@ -25,18 +34,36 @@ export function complete({ system, prompt, model, timeoutMs }) {
     const child = spawn(process.env.CLAUDE_BIN || "claude", args, { cwd: os.tmpdir(), stdio: ["pipe", "pipe", "pipe"] });
     let stdout = "";
     let stderr = "";
-    const timer = setTimeout(() => {
+    let killTimer;
+    const stopChild = (err) => {
+      reject(err);
+      if (killTimer) return;
       child.kill("SIGTERM");
-      reject(new Error(`Claude Code took longer than ${Math.round(timeoutMs / 1000)} seconds; try fewer leads at once (draftBatchSize).`));
+      killTimer = setTimeout(() => {
+        if (child.exitCode === null && child.signalCode !== "SIGKILL") child.kill("SIGKILL");
+      }, KILL_GRACE_MS);
+    };
+    const timer = setTimeout(() => {
+      stopChild(new Error(`Claude Code took longer than ${Math.round(timeoutMs / 1000)} seconds; try fewer leads at once (draftBatchSize).`));
     }, timeoutMs);
-    child.stdout.on("data", (d) => (stdout += d));
-    child.stderr.on("data", (d) => (stderr += d));
+    child.stdout.on("data", (d) => {
+      if (killTimer) return;
+      stdout += d;
+      if (stdout.length > MAX_STDOUT) {
+        clearTimeout(timer);
+        stopChild(new Error(`Claude Code returned more than ${MAX_STDOUT / 1024 / 1024} MB of output; stopped it.`));
+      }
+    });
+    child.stderr.on("data", (d) => {
+      if (stderr.length < MAX_STDERR) stderr += String(d).slice(0, MAX_STDERR - stderr.length);
+    });
     child.on("error", (err) => {
       clearTimeout(timer);
       reject(err.code === "ENOENT" ? new Error("The `claude` command wasn't found. Install Claude Code, or set CLAUDE_BIN.") : err);
     });
     child.on("close", (code) => {
       clearTimeout(timer);
+      clearTimeout(killTimer);
       let out;
       try {
         out = JSON.parse(stdout);
@@ -46,6 +73,9 @@ export function complete({ system, prompt, model, timeoutMs }) {
       if (out.is_error) return reject(new Error(`Claude Code: ${out.result || out.subtype || "error"}`));
       resolve(out.result || "");
     });
+    // If the process exits before reading the prompt, the write fails with
+    // EPIPE; the close handler above reports it instead.
+    child.stdin.on("error", () => {});
     child.stdin.end(prompt);
   });
 }

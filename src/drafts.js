@@ -6,6 +6,7 @@ import { draftEmails } from "./drafter/index.js";
 import { setLeadFieldNow } from "./edits.js";
 import { automatedKind, mapLimit } from "./gmailSync.js";
 import { withSheetLock } from "./lock.js";
+import { UserError } from "./errors.js";
 
 const THREAD_MESSAGES = 6;
 // Gmail thread reads at once while gathering leads to draft.
@@ -13,7 +14,7 @@ const THREAD_CONCURRENCY = 4;
 
 function getLead(id) {
   const lead = getDb().prepare("SELECT * FROM leads WHERE id = ?").get(id);
-  if (!lead) throw new Error(`Lead ${id} not found. Sync and try again.`);
+  if (!lead) throw new UserError(`Lead ${id} not found. Sync and try again.`);
   return lead;
 }
 
@@ -41,7 +42,7 @@ export async function generateDrafts(leadIds, instructions, templateId = null) {
   let template = null;
   if (templateId) {
     template = (loadSettings().draftTemplates || []).find((t) => t.id === templateId);
-    if (!template) throw new Error("That saved email no longer exists. Pick another, or reload the page.");
+    if (!template) throw new UserError("That saved email no longer exists. Pick another, or reload the page.");
   }
   const leads = leadIds.map(getLead);
   const items = await mapLimit(leads, THREAD_CONCURRENCY, async (lead) => {
@@ -91,9 +92,9 @@ export function saveDraft(leadId, draft) {
 
 async function saveDraftNow(leadId, { subject, body }) {
   if (!loadSettings().createDrafts) {
-    throw new Error("Saving Gmail drafts is turned off (Settings → Save Gmail drafts).");
+    throw new UserError("Saving Gmail drafts is turned off (Settings → Save Gmail drafts).");
   }
-  if (!body?.trim()) throw new Error("The draft is empty");
+  if (!body?.trim()) throw new UserError("The draft is empty");
   const lead = getLead(leadId);
   const source = getSource(lead.source_id);
   const gmail = gmailClientFor(source.account);
