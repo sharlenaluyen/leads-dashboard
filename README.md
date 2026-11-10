@@ -67,6 +67,11 @@ extra columns alongside):
 | `1` | Too recent to chase yet |
 | `0` | Closed out, no action needed |
 
+Sync never sets priority from timing; it's yours to set in the sheet or the
+dashboard. (The one exception: a reopened row loses a priority of 0, see
+below.) `dueSoonDays` and `overdueDays` only shade the age column and, with
+`followUpBy: "timing"`, add rows to Follow up.
+
 **Follow-up status:** Open, Pending action, Awaiting Reply, Contacted elsewhere, Closed - interested,
 Closed - declined forever, Closed - declined for now, Closed - Other, Confirmed. Any status
 starting with "Closed" is hidden unless **Show closed** is ticked.
