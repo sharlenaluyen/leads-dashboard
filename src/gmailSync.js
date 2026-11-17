@@ -146,20 +146,33 @@ export function summarizeMessage(msg) {
   };
 }
 
+const isNotFound = (err) => err?.code === 404 || err?.response?.status === 404;
+
 // `why` says which part of the sync wanted the message ("a Gmail draft"),
 // for the error if the read fails.
+//
+// Returns null when the message no longer exists. Every id here came from
+// Gmail moments ago (history, a search, the draft list), so a 404 means it
+// was deleted in between: a draft saved again or sent (Gmail gives a draft
+// a new message on every save), or mail deleted for good. The deletion is
+// in Gmail's history, so the next sync accounts for it.
 async function getMeta(gmail, id, counter, why) {
-  const { data } = await during(`Reading Gmail message ${id} (${why})`, () =>
-    counter.run(() =>
-      gmail.users.messages.get({
-        userId: "me",
-        id,
-        format: "metadata",
-        metadataHeaders: ["From", "To", "Cc", "Date", "List-Unsubscribe", "Precedence", ...AUTOMATION_HEADERS],
-      })
-    )
-  );
-  return data;
+  try {
+    const { data } = await during(`Reading Gmail message ${id} (${why})`, () =>
+      counter.run(() =>
+        gmail.users.messages.get({
+          userId: "me",
+          id,
+          format: "metadata",
+          metadataHeaders: ["From", "To", "Cc", "Date", "List-Unsubscribe", "Precedence", ...AUTOMATION_HEADERS],
+        })
+      )
+    );
+    return data;
+  } catch (err) {
+    if (isNotFound(err)) return null;
+    throw err;
+  }
 }
 
 // [{ id, threadId }], newest first. `what` describes the search for the
@@ -228,7 +241,9 @@ async function backfillLead(gmail, lead, counter) {
   if (!found.length) return change;
   let newest = null;
   for (const { id } of found.slice(0, AUTO_REPLY_SCAN)) {
-    const m = summarizeMessage(await getMeta(gmail, id, counter, `newest mail with ${lead.email}`));
+    const meta = await getMeta(gmail, id, counter, `newest mail with ${lead.email}`);
+    if (!meta) continue;
+    const m = summarizeMessage(meta);
     if (!m.skip) {
       newest = m;
       break;
@@ -237,10 +252,8 @@ async function backfillLead(gmail, lead, counter) {
   if (newest) Object.assign(change, applyMessage({}, newest));
   if (newest?.dir !== "sent") {
     const [sent] = await listIds(gmail, addressQuery(addressesOf(lead), { sentOnly: true }), counter, { max: 1, what: `mail you sent to ${lead.email}` });
-    if (sent) {
-      const meta = await getMeta(gmail, sent.id, counter, `your last email to ${lead.email}`);
-      Object.assign(change, applyMessage(change, summarizeMessage(meta)));
-    }
+    const meta = sent && (await getMeta(gmail, sent.id, counter, `your last email to ${lead.email}`));
+    if (meta) Object.assign(change, applyMessage(change, summarizeMessage(meta)));
   }
   return change;
 }
@@ -296,7 +309,7 @@ async function historySince(gmail, historyId, counter) {
       pageToken = data.nextPageToken;
     } while (pageToken);
   } catch (err) {
-    if (err?.code === 404 || err?.response?.status === 404) return null;
+    if (isNotFound(err)) return null;
     throw err;
   }
   for (const id of gone) added.delete(id);
@@ -431,7 +444,7 @@ export async function syncAccount(gmail, { leads, threads = new Map(), cursor, d
     const metas = await mapLimit([...new Set(candidateIds)], BACKFILL_CONCURRENCY, (id) => getMeta(gmail, id, counter, "new mail since the last sync"));
     const leadEmails = new Set(byEmail.keys());
     for (const msg of metas) {
-      if (isIgnored(msg.labelIds)) continue;
+      if (!msg || isIgnored(msg.labelIds)) continue;
       const m = summarizeMessage(msg);
       if (m.skip) continue;
       const threadLead = m.dir === "received" ? (byThread.get(m.threadId) || [])[0] : null;
@@ -471,15 +484,17 @@ export async function syncAccount(gmail, { leads, threads = new Map(), cursor, d
     nextDraftMeta = new Map();
     const unseen = drafts.filter((d) => !draftMeta.has(d.message.id));
     const fetched = await mapLimit(unseen, BACKFILL_CONCURRENCY, (d) => getMeta(gmail, d.message.id, counter, `Gmail draft ${d.id}`));
-    const fresh = new Map(fetched.map((msg) => [msg.id, msg]));
-    const current = drafts.map((d) => {
+    const fresh = new Map(fetched.filter(Boolean).map((msg) => [msg.id, msg]));
+    const current = drafts.flatMap((d) => {
       let meta = draftMeta.get(d.message.id);
       if (!meta) {
+        // Edited or sent since the list call: left out until the next sync.
+        if (!fresh.has(d.message.id)) return [];
         const m = summarizeMessage(fresh.get(d.message.id));
         meta = { threadId: m.threadId, at: m.at, addresses: [...m.addresses] };
       }
       nextDraftMeta.set(d.message.id, meta);
-      return { id: d.id, messageId: d.message.id, ...meta };
+      return [{ id: d.id, messageId: d.message.id, ...meta }];
     });
     for (const lead of leads) {
       const mine = threadsOf(lead);
