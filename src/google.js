@@ -99,22 +99,41 @@ function networkCode(err) {
   return null;
 }
 
-// Turns a Google API failure into a message that says what to do.
-// Google returns invalid_grant when a refresh token has expired (every 7 days
-// while the OAuth app is in Testing mode).
+// Google's own words for a failure, with nothing added.
+export const googleSaid = (err) => err?.response?.data?.error?.message || err?.message || String(err);
+
+const httpStatus = (err) => err?.response?.status ?? (Number.isInteger(err?.code) ? err.code : null);
+
+// Turns a Google API failure into a message that says what failed and what
+// to do. `err.step` (set by `during` in errors.js) names the call that
+// failed. Google returns invalid_grant when a refresh token has expired
+// (every 7 days while the OAuth app is in Testing mode).
 export function explainGoogleError(err, alias) {
+  const step = err?.step;
   const msg = String(err?.response?.data?.error || err?.message || err);
   if (/invalid_grant/i.test(msg)) {
     return `Google sign-in for "${alias}" has expired. Click "Google sign-ins" at the top of the dashboard to sign in again, then sync again.`;
   }
   if (err?.code === "TimeoutError" || err?.name === "TimeoutError") {
-    return `Google didn't answer within ${REQUEST_TIMEOUT_MS / 1000} seconds. Try again in a moment.`;
+    return `Google didn't answer within ${REQUEST_TIMEOUT_MS / 1000} seconds${step ? ` (${lowerFirst(step)})` : ""}. Try again in a moment.`;
   }
   if (networkCode(err)) {
     return `Couldn't reach Google (${networkCode(err)}). Check your internet connection, then try again.`;
   }
-  return err?.response?.data?.error?.message || err?.message || String(err);
+  const said = googleSaid(err);
+  const status = httpStatus(err);
+  // Google's 404 text ("Requested entity was not found.") names nothing, and
+  // it's the same answer whether the thing is gone or just not shared.
+  const what =
+    status === 404
+      ? `Google can't find it, or ${alias ? `the "${alias}" account` : "this account"} isn't allowed to see it (404: ${said})`
+      : step && status
+        ? `${said} (${status})`
+        : said;
+  return step ? `${step} failed: ${what}` : what;
 }
+
+const lowerFirst = (s) => s.charAt(0).toLowerCase() + s.slice(1);
 
 // Gaxios errors (every googleapis failure, including the token refresh)
 // carry the request's config.

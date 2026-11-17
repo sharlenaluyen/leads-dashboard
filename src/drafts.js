@@ -6,7 +6,7 @@ import { draftEmails } from "./drafter/index.js";
 import { setLeadFieldNow } from "./edits.js";
 import { automatedKind, mapLimit } from "./gmailSync.js";
 import { withSheetLock } from "./lock.js";
-import { UserError } from "./errors.js";
+import { UserError, during } from "./errors.js";
 
 const THREAD_MESSAGES = 6;
 // Gmail thread reads at once while gathering leads to draft.
@@ -22,7 +22,9 @@ function getLead(id) {
 // Bounces and automatic replies are left out: the lead didn't write them.
 async function loadThread(gmail, lead) {
   if (!lead.thread_id) return [];
-  const { data } = await withRetry(() => gmail.users.threads.get({ userId: "me", id: lead.thread_id, format: "full" }));
+  const { data } = await during(`Reading the Gmail thread with ${lead.email} (${lead.thread_id})`, () =>
+    withRetry(() => gmail.users.threads.get({ userId: "me", id: lead.thread_id, format: "full" }))
+  );
   return (data.messages || [])
     .filter((m) => !(m.labelIds || []).includes("DRAFT") && !automatedKind(m))
     .slice(-THREAD_MESSAGES)
@@ -107,13 +109,15 @@ async function saveDraftNow(leadId, { subject, body }) {
   let finalSubject = subject?.trim() || "Following up";
   if (lead.thread_id && lead.last_message_id) {
     const { data: last } = await explainingGoogleErrors(source.account, () =>
-      withRetry(() =>
-        gmail.users.messages.get({
-          userId: "me",
-          id: lead.last_message_id,
-          format: "metadata",
-          metadataHeaders: ["Subject", "Message-Id", "References"],
-        })
+      during(`Reading the last email with ${lead.email} (message ${lead.last_message_id}) to reply to it`, () =>
+        withRetry(() =>
+          gmail.users.messages.get({
+            userId: "me",
+            id: lead.last_message_id,
+            format: "metadata",
+            metadataHeaders: ["Subject", "Message-Id", "References"],
+          })
+        )
       )
     );
     const headers = last.payload?.headers;
@@ -136,8 +140,12 @@ async function saveDraftNow(leadId, { subject, body }) {
   const { replacing, data } = await explainingGoogleErrors(source.account, async () => {
     const replacing = await draftExists(gmail, existingId);
     const { data } = replacing
-      ? await withRetry(() => gmail.users.drafts.update({ userId: "me", id: existingId, requestBody: { message } }))
-      : await withRetry(() => gmail.users.drafts.create({ userId: "me", requestBody: { message } }));
+      ? await during(`Updating Gmail draft ${existingId} for ${lead.email}`, () =>
+          withRetry(() => gmail.users.drafts.update({ userId: "me", id: existingId, requestBody: { message } }))
+        )
+      : await during(`Creating a Gmail draft for ${lead.email}${threadId ? ` in thread ${threadId}` : ""}`, () =>
+          withRetry(() => gmail.users.drafts.create({ userId: "me", requestBody: { message } }))
+        );
     return { replacing, data };
   });
 

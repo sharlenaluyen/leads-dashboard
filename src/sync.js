@@ -1,7 +1,7 @@
 import { extractEmailAddress } from "multi-gmail-mcp/src/gmail.js";
 import { addCustomStatuses, loadSettings, loadSources, statusesFor } from "./config.js";
 import { deleteDb, getDb, transaction } from "./db.js";
-import { CallCounter, audit, explainGoogleError, gmailClientFor, getAccountInfo, sheetsClientFor } from "./google.js";
+import { CallCounter, audit, explainGoogleError, gmailClientFor, getAccountInfo, googleSaid, sheetsClientFor } from "./google.js";
 import { syncAccount } from "./gmailSync.js";
 import { logChanges, markFailed } from "./changes.js";
 import { withSheetLock } from "./lock.js";
@@ -63,7 +63,7 @@ export function ownDomainsOf(self) {
 }
 
 // Google's answer for a range it can't find, e.g. "Unable to parse range: 'Old name'".
-const isBadRange = (err) => (err?.code === 400 || err?.response?.status === 400) && /parse range/i.test(explainGoogleError(err));
+const isBadRange = (err) => (err?.code === 400 || err?.response?.status === 400) && /parse range/i.test(googleSaid(err));
 
 // Sheet -> SQLite for one source. Returns the parsed rows keyed by lead id,
 // which write-back compares against.
@@ -81,7 +81,7 @@ async function syncSourceSheet(source, counter, summary) {
     const titles = new Set((await listTabs(sheets, source.spreadsheetId, counter)).tabs.map((t) => t.title));
     const gone = source.tabs.filter((t) => !titles.has(t));
     if (!gone.length) throw err;
-    const google = explainGoogleError(err, source.account);
+    const google = googleSaid(err);
     for (const tab of gone) lost.set(tab, `Tab not found in the spreadsheet (renamed or deleted?). Google said: ${google}`);
     const readable = source.tabs.filter((t) => titles.has(t));
     values = readable.length ? await readTabs(sheets, source.spreadsheetId, readable, counter) : {};

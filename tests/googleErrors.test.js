@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { UserError } from "../src/errors.js";
+import { UserError, during } from "../src/errors.js";
 import { StaleRowError } from "../src/edits.js";
 import { explainGoogleError, explainingGoogleErrors, getAccountInfo, googleFailure } from "../src/google.js";
 
@@ -28,6 +28,32 @@ test("being offline says to check the connection, even when the code is on a nes
 test("Google's own message is kept for other API errors", () => {
   const err = googleFailure(gaxios({ code: 403, response: { status: 403, data: { error: { message: "The caller does not have permission" } } } }), "work");
   assert.equal(err.message, "The caller does not have permission");
+});
+
+test("a failed call says which step failed, and the innermost step wins", async () => {
+  const forbidden = gaxios({ code: 403, response: { status: 403, data: { error: { message: "The caller does not have permission" } } } });
+  const thrown = await during("Syncing Gmail", () => during("Listing Gmail drafts", async () => { throw forbidden; })).catch((e) => e);
+  assert.equal(thrown, forbidden);
+  assert.equal(explainGoogleError(thrown, "work"), "Listing Gmail drafts failed: The caller does not have permission (403)");
+});
+
+test("a 404 names what was asked for and the account, since Google's text names neither", async () => {
+  const missing = gaxios({ code: 404, response: { status: 404, data: { error: { message: "Requested entity was not found." } } } });
+  assert.equal(
+    explainGoogleError(missing, "travels"),
+    `Google can't find it, or the "travels" account isn't allowed to see it (404: Requested entity was not found.)`
+  );
+  const thrown = await during("Reading Gmail message 18c (Gmail draft r-1)", async () => { throw missing; }).catch((e) => e);
+  assert.equal(
+    explainGoogleError(thrown, "travels"),
+    `Reading Gmail message 18c (Gmail draft r-1) failed: Google can't find it, or the "travels" account isn't allowed to see it (404: Requested entity was not found.)`
+  );
+});
+
+test("a timeout says which call hung", async () => {
+  const slow = gaxios({ message: "The operation was aborted due to timeout", code: "TimeoutError" });
+  const thrown = await during("Listing Gmail drafts", async () => { throw slow; }).catch((e) => e);
+  assert.match(explainGoogleError(thrown, "work"), /didn't answer within 30 seconds \(listing Gmail drafts\)/);
 });
 
 test("non-Google errors and UserErrors pass through unchanged", async () => {

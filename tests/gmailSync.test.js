@@ -102,6 +102,24 @@ test("first sync backfills each lead: newest either way plus newest sent", async
   assert.equal(cursor.history_id, "900");
 });
 
+test("a failed Gmail call is labelled with the step and the item it was for", async () => {
+  const mailbox = [msg("r1", { at: 2000, from: "a@biz.com", to: "me@x.com" })];
+  const gone = () => Promise.reject(Object.assign(new Error("Requested entity was not found."), { code: 404 }));
+  const lead = { id: 1, email: "a@biz.com", gmail_checked: 0 };
+
+  const gmail = fakeGmail(mailbox);
+  gmail.users.messages.get = gone;
+  await assert.rejects(syncAccount(gmail, { leads: [lead] }, new Counter()), (e) => e.step === "Reading Gmail message r1 (newest mail with a@biz.com)");
+
+  const drafts = fakeGmail([msg("d1", { at: 3000, from: "me@x.com", to: "a@biz.com", sent: true, labels: ["DRAFT"] })]);
+  drafts.users.messages.get = gone;
+  await assert.rejects(syncAccount(drafts, { leads: [lead] }, new Counter()), (e) => e.step === "Reading Gmail message d1 (Gmail draft draft-d1)");
+
+  const profile = fakeGmail(mailbox);
+  profile.users.getProfile = gone;
+  await assert.rejects(syncAccount(profile, { leads: [lead] }, new Counter()), (e) => e.step === "Reading the Gmail mailbox's profile");
+});
+
 test("a lead with no email history is marked checked with no dates", async () => {
   const { changes } = await syncAccount(fakeGmail([]), { leads: [{ id: 1, email: "new@biz.com", gmail_checked: 0 }] }, new Counter());
   const c = changes.get(1);

@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { HEADERS, OPTIONAL_HEADERS } from "./config.js";
+import { during } from "./errors.js";
 
 const norm = (s) => String(s ?? "").trim().toLowerCase();
 
@@ -160,11 +161,13 @@ export function parseTab(values) {
 // --- Google Sheets calls ----------------------------------------------------
 
 export async function listTabs(sheets, spreadsheetId, counter) {
-  const { data } = await counter.run(() =>
-    sheets.spreadsheets.get({
-      spreadsheetId,
-      fields: "properties.title,sheets.properties(sheetId,title,hidden)",
-    })
+  const { data } = await during(`Opening spreadsheet ${spreadsheetId}`, () =>
+    counter.run(() =>
+      sheets.spreadsheets.get({
+        spreadsheetId,
+        fields: "properties.title,sheets.properties(sheetId,title,hidden)",
+      })
+    )
   );
   return {
     title: data.properties?.title,
@@ -177,13 +180,15 @@ export async function listTabs(sheets, spreadsheetId, counter) {
 
 // Several ranges of one spreadsheet in a single call, in the order given.
 export async function readRanges(sheets, spreadsheetId, ranges, counter) {
-  const { data } = await counter.run(() =>
-    sheets.spreadsheets.values.batchGet({
-      spreadsheetId,
-      ranges,
-      valueRenderOption: "FORMATTED_VALUE",
-      majorDimension: "ROWS",
-    })
+  const { data } = await during(`Reading ${ranges.join(", ")} from spreadsheet ${spreadsheetId}`, () =>
+    counter.run(() =>
+      sheets.spreadsheets.values.batchGet({
+        spreadsheetId,
+        ranges,
+        valueRenderOption: "FORMATTED_VALUE",
+        majorDimension: "ROWS",
+      })
+    )
   );
   return ranges.map((_, i) => data.valueRanges?.[i]?.values || []);
 }
@@ -195,8 +200,8 @@ export async function readTabs(sheets, spreadsheetId, tabs, counter) {
 }
 
 export async function readRange(sheets, spreadsheetId, range, counter) {
-  const { data } = await counter.run(() =>
-    sheets.spreadsheets.values.get({ spreadsheetId, range, valueRenderOption: "FORMATTED_VALUE" })
+  const { data } = await during(`Reading ${range} from spreadsheet ${spreadsheetId}`, () =>
+    counter.run(() => sheets.spreadsheets.values.get({ spreadsheetId, range, valueRenderOption: "FORMATTED_VALUE" }))
   );
   return data.values || [];
 }
@@ -210,16 +215,18 @@ export async function readRange(sheets, spreadsheetId, range, counter) {
 export async function writeCells(sheets, spreadsheetId, updates, counter) {
   if (!updates.length) return [];
   const entered = (u) => (u.date || u.value === "" ? u.value : `'${u.value}`);
-  const { data } = await counter.run(() =>
-    sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        valueInputOption: "USER_ENTERED",
-        includeValuesInResponse: true,
-        responseValueRenderOption: "FORMATTED_VALUE",
-        data: updates.map((u) => ({ range: u.range, values: [[entered(u)]] })),
-      },
-    })
+  const { data } = await during(`Writing ${updates.length} cell(s) to spreadsheet ${spreadsheetId}`, () =>
+    counter.run(() =>
+      sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          includeValuesInResponse: true,
+          responseValueRenderOption: "FORMATTED_VALUE",
+          data: updates.map((u) => ({ range: u.range, values: [[entered(u)]] })),
+        },
+      })
+    )
   );
   const responses = data?.responses || [];
   return updates.map((u, i) => {
