@@ -372,6 +372,7 @@ input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px s
 .banner.error { background: var(--danger-bg); color: var(--danger); }
 .banner.draft-off { margin: 0 0 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .banner.draft-off[hidden] { display: none; }
+.banner.draft-limit { margin: 0 0 12px; }
 .banner.draft-off p { margin: 0; flex: 1 1 260px; }
 .banner ul { margin: 4px 0 0; padding-left: 18px; }
 .banner.dismissible { display: flex; align-items: flex-start; gap: 8px; }
@@ -501,6 +502,7 @@ tr.closed td { opacity: 0.55; }
 .action.a-send { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 .action.a-nudge { background: var(--u3-bg); color: var(--u3); font-weight: 600; }
 .action.a-first { background: var(--u2-bg); color: var(--warn-text); }
+.follow-ups.at-limit { color: var(--text); font-weight: 500; }
 .draft-flag { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 6px; }
 td select { min-width: 72px; }
 td select.priority { width: 140px; }

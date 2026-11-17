@@ -14,12 +14,28 @@ test("an older cache sends its 'received' leads back to Gmail for a fresh look",
   const d = new DatabaseSync(":memory:");
   init(d);
   d.exec(`INSERT INTO leads (source_id, tab, email, row_number, last_email_dir, gmail_checked) VALUES
-    ('s', 't', 'a@x.com', 2, 'received', 1), ('s', 't', 'b@x.com', 3, 'sent', 1)`);
+    ('s', 't', 'a@x.com', 2, 'received', 1), ('s', 't', 'b@x.com', 3, NULL, 1)`);
   d.exec("PRAGMA user_version = 2");
   init(d);
   const rows = d.prepare("SELECT email, gmail_checked FROM leads ORDER BY email").all();
   assert.deepEqual(rows.map((r) => [r.email, r.gmail_checked]), [["a@x.com", 0], ["b@x.com", 1]], "kept, and only 'received' rechecked");
-  assert.equal(d.prepare("PRAGMA user_version").get().user_version, 3);
+  d.prepare("UPDATE leads SET gmail_checked = 1").run();
+  init(d);
+  assert.equal(d.prepare("SELECT COUNT(*) AS n FROM leads WHERE gmail_checked = 0").get().n, 0, "runs once");
+  d.close();
+});
+
+test("a cache from before follow-ups were counted recounts every lead you emailed last", () => {
+  const d = new DatabaseSync(":memory:");
+  init(d);
+  d.exec("ALTER TABLE leads DROP COLUMN sent_streak");
+  d.exec(`INSERT INTO leads (source_id, tab, email, row_number, last_email_dir, gmail_checked) VALUES
+    ('s', 't', 'a@x.com', 2, 'received', 1), ('s', 't', 'b@x.com', 3, 'sent', 1), ('s', 't', 'c@x.com', 4, 'bounced', 1), ('s', 't', 'd@x.com', 5, NULL, 1)`);
+  d.exec("PRAGMA user_version = 3");
+  init(d);
+  const rows = d.prepare("SELECT email, gmail_checked, sent_streak FROM leads ORDER BY email").all();
+  assert.deepEqual(rows.map((r) => [r.email, r.gmail_checked, r.sent_streak]), [["a@x.com", 1, null], ["b@x.com", 0, null], ["c@x.com", 0, null], ["d@x.com", 1, null]]);
+  assert.equal(d.prepare("PRAGMA user_version").get().user_version, 4);
   d.prepare("UPDATE leads SET gmail_checked = 1").run();
   init(d);
   assert.equal(d.prepare("SELECT COUNT(*) AS n FROM leads WHERE gmail_checked = 0").get().n, 0, "runs once");

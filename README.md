@@ -77,7 +77,7 @@ below.) `dueSoonDays` and `overdueDays` only shade the age column and, with
 `followUpBy: "timing"`, add rows to Follow up.
 
 **Follow-up status:** Open, Pending action, Awaiting Reply, Contacted elsewhere, Closed - interested,
-Closed - declined forever, Closed - declined for now, Closed - Other, Confirmed. Any status
+Closed - declined forever, Closed - declined for now, Closed - no reply, Closed - Other, Confirmed. Any status
 starting with "Closed" is hidden unless **Show closed** is ticked.
 
 Sync sets the status from Gmail while it's blank, Open, Pending action,
@@ -88,6 +88,7 @@ Awaiting Reply or Contacted elsewhere:
 | No email with them, but the sheet has a date in `last email` or `last followed up` | Contacted elsewhere (the sheet's dates are kept) |
 | They replied last, your last email bounced, or there's an unsent draft | Pending action |
 | You sent last | Awaiting Reply |
+| You sent last, and that was the row's last follow-up | Closed - no reply (see [Follow-up limit](#follow-up-limit)) |
 | No emails, and no dates in the sheet | Open |
 
 "Contacted elsewhere" is for outreach outside Gmail (a contact form, another
@@ -107,8 +108,9 @@ first, in the sheet or the dashboard, your status wins and the reopen is
 dropped.
 
 **Order:** rows sort by what they need next. The **Next** column shows it: Reply,
-Send draft, Follow up (waiting, priority 3), First email, Waiting, No action
-(closed, confirmed or priority 0). Ties go by priority, then sheet row order.
+Send draft, Follow up (waiting, priority 3), First email, Waiting, Last
+follow-up sent, No action (closed, confirmed or priority 0). Ties go by
+priority, then sheet row order.
 
 Each row's Next value comes from the first of these checks that matches:
 
@@ -116,12 +118,49 @@ Each row's Next value comes from the first of these checks that matches:
 2. They sent the last email and there's no draft → **Reply**
 3. A draft exists → **Send draft**
 4. No email history → **First email**
-5. Priority 3 → **Follow up**
-6. Anything else → **Waiting**
+5. At the follow-up limit (and not closed by sync) → **Last follow-up sent**
+6. Priority 3 → **Follow up**
+7. Anything else → **Waiting**
 
 Because the draft check runs before the history check, Send draft takes
 priority over First email. It also sorts higher, so rows with a draft ready
 show up first.
+
+### Follow-up limit
+
+So nobody keeps getting emails they aren't answering, **Settings → Follow-up
+timing → Max follow-ups** (`maxFollowUps`) caps how many follow-ups one lead
+gets. A follow-up is an email you send after another of yours with no reply
+in between: sync counts the emails you've sent in a row since their last
+reply and leaves out the first. With a limit of 1, that's your first email
+and one follow-up; with 2, two follow-ups. Blank means no limit.
+
+The count shows under **Last followed up** while you're the one waiting
+("1 of 2 follow-ups", or "1 follow-up" with no limit).
+
+The sync after you send a row's last follow-up sets its status to **Closed -
+no reply**, which hides the row like any other Closed status. Only rows whose
+status sync manages are closed this way. Confirmed and custom statuses stay,
+and such a row at the limit shows **Last follow-up sent** under Next, never
+Follow up. A row with an unsent draft stays Pending action until the draft is
+sent or discarded. Ticking a row at the limit for drafting still works, with
+a note in the draft dialog naming it.
+
+A reply reopens the row as Pending action, as it does for any Closed row,
+and starts the count again: your answer to it is not a follow-up, the email
+after that is the first.
+
+Turning the limit on, or lowering it, closes every row already at it on the
+next sync. A row closed this way stays closed if you raise the limit later;
+set its status back to Awaiting Reply to get it going again. Setting a closed
+row back by hand without raising the limit closes it again on the next sync.
+
+An email that bounced isn't counted, since it never arrived; the bounce
+itself and automatic replies don't reset the count. The count comes from
+Gmail and is kept in the SQLite cache, not the sheet. A first lookup reads
+back at most 12 messages, so a count that high may be short. The first sync
+after this was added looks up every lead you emailed last again, to count
+them: about two Gmail calls each, once.
 
 The dashboard only checks for these; it never adds columns. A tab missing any
 of them is skipped and the dashboard lists exactly which headers to add. The
@@ -226,8 +265,9 @@ account and takes 1-2 seconds (plus one more call for a spreadsheet with a
 missing tab). The header shows the actual count after each
 sync.
 
-- A newly added row costs up to three Gmail calls once, to find its threads
-  and history. Deleting the email a row's dates came from re-checks that row.
+- A newly added row costs two or three Gmail calls once, to find its threads
+  and history and count its follow-ups: a whole thread is read in one call,
+  so it's only more when the newest emails are spread over several threads. Deleting the email a row's dates came from re-checks that row.
 - A `draft id` that still points to a live draft stays linked to its row,
   even if the draft has no recipient yet.
 - If more than about a week passes between syncs, Gmail's bookmark expires and
@@ -444,6 +484,7 @@ call has server-side refusal fallback turned on.
 | `dueSoonDays` | `7` | Days since the last email before a row's age turns amber |
 | `overdueDays` | `14` | Days before it turns red; must be more than `dueSoonDays` |
 | `followUpBy` | `"priority"` | When Next action says Follow up: `"priority"` (priority 3) or `"timing"` (priority 3, or you sent last and it's past `overdueDays`) |
+| `maxFollowUps` | unset | The most follow-ups a lead gets without replying (0–20); unset is no limit (see [Follow-up limit](#follow-up-limit)) |
 | `autoSync` | `"off"` | or `"open"` (when the page opens), `"15"` / `"60"` (minutes, while the page is open and visible) |
 | `draftTone` | `""` | Match the thread; or `"friendly"`, `"brief"`, `"formal"` |
 | `draftSignOff` | `""` | Ends every draft, as written (up to 200 characters) |

@@ -29,6 +29,7 @@ export const HEADERS = {
 };
 export const OPTIONAL_HEADERS = { notes: "notes" };
 
+export const NO_REPLY_STATUS = "Closed - no reply";
 export const BUILT_IN_STATUSES = [
   "Open",
   "Pending action",
@@ -37,6 +38,8 @@ export const BUILT_IN_STATUSES = [
   "Closed - interested",
   "Closed - declined forever",
   "Closed - declined for now",
+  // Set by sync when a row reaches Settings → Max follow-ups with no reply.
+  "Closed - no reply",
   "Closed - Other",
   "Confirmed",
 ];
@@ -68,6 +71,10 @@ const DEFAULT_SETTINGS = {
   dueSoonDays: 7,
   overdueDays: 14,
   followUpBy: "priority",
+  // The most follow-ups one lead gets without replying: the emails you send
+  // after your first, counted from their last reply. Sync closes a row as
+  // soon as you've sent its last one. null is no limit.
+  maxFollowUps: null,
   // "off", "open" (each time the page opens), or minutes between syncs
   // while the page is open ("15", "60").
   autoSync: "off",
@@ -281,6 +288,7 @@ const SETTING_RULES = {
   dueSoonDays: wholeNumber("Due soon", 1, 365),
   overdueDays: wholeNumber("Overdue", 2, 366),
   followUpBy: oneOf("followUpBy", ["priority", "timing"]),
+  maxFollowUps: (v) => (v === "" || v == null ? null : wholeNumber("Max follow-ups", 0, 20)(v)),
   autoSync: oneOf("autoSync", AUTO_SYNC),
   draftTone: oneOf("draftTone", TONES),
   draftSignOff: text("Sign-off", 200),

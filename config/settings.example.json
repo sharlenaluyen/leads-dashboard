@@ -15,6 +15,7 @@
   "dueSoonDays": 7,
   "overdueDays": 14,
   "followUpBy": "priority",
+  "maxFollowUps": null,
   "autoSync": "off",
   "draftTone": "",
   "draftSignOff": "",
