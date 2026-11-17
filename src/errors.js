@@ -5,3 +5,21 @@
 export class UserError extends Error {
   status = 400;
 }
+
+// Runs fn; if it throws, notes on the error what was being done ("Reading
+// message 18c… (a Gmail draft)"), so the message shown can say which step
+// failed. The innermost step wins. See explainGoogleError.
+export async function during(step, fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (err && typeof err === "object" && !err.step) {
+      try {
+        err.step = step;
+      } catch {
+        // A frozen error keeps its own message.
+      }
+    }
+    throw err;
+  }
+}

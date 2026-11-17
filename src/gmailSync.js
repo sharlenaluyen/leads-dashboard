@@ -1,4 +1,5 @@
 import { extractEmailAddress, headerValue, splitAddressList, threadReplyState } from "multi-gmail-mcp/src/gmail.js";
+import { during } from "./errors.js";
 
 // Labels that mean a message isn't real correspondence for follow-up purposes.
 const IGNORED_LABELS = ["DRAFT", "SPAM", "TRASH", "CHAT"];
@@ -145,25 +146,30 @@ export function summarizeMessage(msg) {
   };
 }
 
-async function getMeta(gmail, id, counter) {
-  const { data } = await counter.run(() =>
-    gmail.users.messages.get({
-      userId: "me",
-      id,
-      format: "metadata",
-      metadataHeaders: ["From", "To", "Cc", "Date", "List-Unsubscribe", "Precedence", ...AUTOMATION_HEADERS],
-    })
+// `why` says which part of the sync wanted the message ("a Gmail draft"),
+// for the error if the read fails.
+async function getMeta(gmail, id, counter, why) {
+  const { data } = await during(`Reading Gmail message ${id} (${why})`, () =>
+    counter.run(() =>
+      gmail.users.messages.get({
+        userId: "me",
+        id,
+        format: "metadata",
+        metadataHeaders: ["From", "To", "Cc", "Date", "List-Unsubscribe", "Precedence", ...AUTOMATION_HEADERS],
+      })
+    )
   );
   return data;
 }
 
-// [{ id, threadId }], newest first.
-async function listIds(gmail, q, counter, { max = 500 } = {}) {
+// [{ id, threadId }], newest first. `what` describes the search for the
+// error if it fails.
+async function listIds(gmail, q, counter, { max = 500, what }) {
   const found = [];
   let pageToken;
   do {
-    const { data } = await counter.run(() =>
-      gmail.users.messages.list({ userId: "me", q, maxResults: Math.min(max - found.length, 500), pageToken })
+    const { data } = await during(`Searching Gmail for ${what}`, () =>
+      counter.run(() => gmail.users.messages.list({ userId: "me", q, maxResults: Math.min(max - found.length, 500), pageToken }))
     );
     for (const m of data.messages || []) found.push({ id: m.id, threadId: m.threadId });
     pageToken = data.nextPageToken;
@@ -176,7 +182,9 @@ async function listDrafts(gmail, counter) {
   const drafts = [];
   let pageToken;
   do {
-    const { data } = await counter.run(() => gmail.users.drafts.list({ userId: "me", maxResults: 500, pageToken }));
+    const { data } = await during("Listing Gmail drafts", () =>
+      counter.run(() => gmail.users.drafts.list({ userId: "me", maxResults: 500, pageToken }))
+    );
     drafts.push(...(data.drafts || []));
     pageToken = data.nextPageToken;
   } while (pageToken);
@@ -205,7 +213,7 @@ export function applyMessage(lead, m) {
 // automatic reply passed over (up to AUTO_REPLY_SCAN).
 const AUTO_REPLY_SCAN = 5;
 async function backfillLead(gmail, lead, counter) {
-  const found = await listIds(gmail, addressQuery(addressesOf(lead)), counter, { max: THREADS_PER_LEAD });
+  const found = await listIds(gmail, addressQuery(addressesOf(lead)), counter, { max: THREADS_PER_LEAD, what: `mail with ${lead.email}` });
   const change = {
     gmail_checked: 1,
     last_email_at: null,
@@ -220,7 +228,7 @@ async function backfillLead(gmail, lead, counter) {
   if (!found.length) return change;
   let newest = null;
   for (const { id } of found.slice(0, AUTO_REPLY_SCAN)) {
-    const m = summarizeMessage(await getMeta(gmail, id, counter));
+    const m = summarizeMessage(await getMeta(gmail, id, counter, `newest mail with ${lead.email}`));
     if (!m.skip) {
       newest = m;
       break;
@@ -228,8 +236,11 @@ async function backfillLead(gmail, lead, counter) {
   }
   if (newest) Object.assign(change, applyMessage({}, newest));
   if (newest?.dir !== "sent") {
-    const [sent] = await listIds(gmail, addressQuery(addressesOf(lead), { sentOnly: true }), counter, { max: 1 });
-    if (sent) Object.assign(change, applyMessage(change, summarizeMessage(await getMeta(gmail, sent.id, counter))));
+    const [sent] = await listIds(gmail, addressQuery(addressesOf(lead), { sentOnly: true }), counter, { max: 1, what: `mail you sent to ${lead.email}` });
+    if (sent) {
+      const meta = await getMeta(gmail, sent.id, counter, `your last email to ${lead.email}`);
+      Object.assign(change, applyMessage(change, summarizeMessage(meta)));
+    }
   }
   return change;
 }
@@ -247,14 +258,16 @@ async function historySince(gmail, historyId, counter) {
   let latest = historyId;
   try {
     do {
-      const { data } = await counter.run(() =>
-        gmail.users.history.list({
-          userId: "me",
-          startHistoryId: historyId,
-          historyTypes: ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"],
-          maxResults: 500,
-          pageToken,
-        })
+      const { data } = await during("Asking Gmail what changed since the last sync", () =>
+        counter.run(() =>
+          gmail.users.history.list({
+            userId: "me",
+            startHistoryId: historyId,
+            historyTypes: ["messageAdded", "messageDeleted", "labelAdded", "labelRemoved"],
+            maxResults: 500,
+            pageToken,
+          })
+        )
       );
       for (const h of data.history || []) {
         for (const { message } of h.messagesAdded || []) {
@@ -339,10 +352,11 @@ export async function syncAccount(gmail, { leads, threads = new Map(), cursor, d
   let h = null;
   let nextHistoryId;
   let fallbackAfter = null;
+  const getProfile = () => during("Reading the Gmail mailbox's profile", () => counter.run(() => gmail.users.getProfile({ userId: "me" })));
   if (!cursor) {
     // Take the bookmark before searching, so anything arriving mid-backfill
     // is picked up next time.
-    const { data } = await counter.run(() => gmail.users.getProfile({ userId: "me" }));
+    const { data } = await getProfile();
     nextHistoryId = data.historyId;
   } else {
     h = await historySince(gmail, cursor.history_id, counter);
@@ -351,7 +365,7 @@ export async function syncAccount(gmail, { leads, threads = new Map(), cursor, d
     } else {
       // Bookmark expired (Gmail keeps about a week of history): fall back to
       // a date search from the last sync, with an hour of overlap.
-      const { data } = await counter.run(() => gmail.users.getProfile({ userId: "me" }));
+      const { data } = await getProfile();
       nextHistoryId = data.historyId;
       fallbackAfter = Math.floor((cursor.synced_at - 3600_000) / 1000);
     }
@@ -381,7 +395,8 @@ export async function syncAccount(gmail, { leads, threads = new Map(), cursor, d
     const introIds = new Set();
     if (fallbackAfter != null) {
       for (const emails of chunk([...byEmail.keys()], ADDRESSES_PER_QUERY)) {
-        candidateIds.push(...(await listIds(gmail, `${addressQuery(emails)} after:${fallbackAfter}`, counter)).map((m) => m.id));
+        const found = await listIds(gmail, `${addressQuery(emails)} after:${fallbackAfter}`, counter, { what: "mail with your leads since the last sync" });
+        candidateIds.push(...found.map((m) => m.id));
       }
     } else if (h.added.length) {
       // Anything in a lead's thread counts, whoever it's from: it's checked
@@ -407,13 +422,13 @@ export async function syncAccount(gmail, { leads, threads = new Map(), cursor, d
         const after = Math.floor((cursor.synced_at - 3600_000) / 1000);
         const wanted = new Set(other.map((m) => m.id));
         for (const emails of chunk([...byEmail.keys()], ADDRESSES_PER_QUERY)) {
-          const found = await listIds(gmail, `${addressQuery(emails)} after:${after}`, counter);
+          const found = await listIds(gmail, `${addressQuery(emails)} after:${after}`, counter, { what: "mail with your leads since the last sync" });
           candidateIds.push(...found.filter((m) => wanted.has(m.id)).map((m) => m.id));
         }
       }
     }
 
-    const metas = await mapLimit([...new Set(candidateIds)], BACKFILL_CONCURRENCY, (id) => getMeta(gmail, id, counter));
+    const metas = await mapLimit([...new Set(candidateIds)], BACKFILL_CONCURRENCY, (id) => getMeta(gmail, id, counter, "new mail since the last sync"));
     const leadEmails = new Set(byEmail.keys());
     for (const msg of metas) {
       if (isIgnored(msg.labelIds)) continue;
@@ -455,7 +470,7 @@ export async function syncAccount(gmail, { leads, threads = new Map(), cursor, d
     const drafts = await listDrafts(gmail, counter);
     nextDraftMeta = new Map();
     const unseen = drafts.filter((d) => !draftMeta.has(d.message.id));
-    const fetched = await mapLimit(unseen, BACKFILL_CONCURRENCY, (d) => getMeta(gmail, d.message.id, counter));
+    const fetched = await mapLimit(unseen, BACKFILL_CONCURRENCY, (d) => getMeta(gmail, d.message.id, counter, `Gmail draft ${d.id}`));
     const fresh = new Map(fetched.map((msg) => [msg.id, msg]));
     const current = drafts.map((d) => {
       let meta = draftMeta.get(d.message.id);
