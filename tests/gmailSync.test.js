@@ -104,7 +104,7 @@ test("first sync backfills each lead: newest either way plus newest sent", async
 
 test("a failed Gmail call is labelled with the step and the item it was for", async () => {
   const mailbox = [msg("r1", { at: 2000, from: "a@biz.com", to: "me@x.com" })];
-  const gone = () => Promise.reject(Object.assign(new Error("Requested entity was not found."), { code: 404 }));
+  const gone = () => Promise.reject(Object.assign(new Error("Backend Error"), { code: 500 }));
   const lead = { id: 1, email: "a@biz.com", gmail_checked: 0 };
 
   const gmail = fakeGmail(mailbox);
@@ -118,6 +118,39 @@ test("a failed Gmail call is labelled with the step and the item it was for", as
   const profile = fakeGmail(mailbox);
   profile.users.getProfile = gone;
   await assert.rejects(syncAccount(profile, { leads: [lead] }, new Counter()), (e) => e.step === "Reading the Gmail mailbox's profile");
+});
+
+test("a message deleted between Gmail naming it and the sync reading it is skipped, not an error", async () => {
+  const notFound = Object.assign(new Error("Requested entity was not found."), { code: 404 });
+  const without = (gmail, ...ids) => {
+    const get = gmail.users.messages.get;
+    gmail.users.messages.get = (args) => (ids.includes(args.id) ? Promise.reject(notFound) : get(args));
+    return gmail;
+  };
+  const cursor = { history_id: "900", synced_at: 0 };
+
+  // New mail in history: the vanished one is passed over, the other counts.
+  const history = [
+    { messagesAdded: [{ message: { id: "vanished", threadId: "t-v", labelIds: ["INBOX"] } }] },
+    { messagesAdded: [{ message: { id: "n1", threadId: "t-n1", labelIds: ["INBOX"] } }] },
+  ];
+  const lead = { id: 1, email: "a@biz.com", gmail_checked: 1, last_email_at: 10 };
+  const mail = without(fakeGmail([msg("n1", { at: 5000, from: "a@biz.com", to: "me@x.com" })], { history }), "vanished");
+  const synced = await syncAccount(mail, { leads: [lead], cursor }, new Counter());
+  assert.equal(synced.changes.get(1).last_email_at, 5000);
+  assert.equal(synced.cursor.history_id, "950");
+
+  // A draft saved again mid-sync: its old message is gone, so it's left out.
+  const draftHistory = [{ messagesAdded: [{ message: { id: "d1", threadId: "t-d1", labelIds: ["DRAFT"] } }] }];
+  const drafts = without(fakeGmail([msg("d1", { at: 3000, from: "me@x.com", to: "a@biz.com", sent: true, labels: ["DRAFT"] })], { history: draftHistory }), "d1");
+  const drafted = await syncAccount(drafts, { leads: [lead], cursor }, new Counter());
+  assert.equal(drafted.changes.has(1), false);
+  assert.equal(drafted.draftMeta.size, 0, "not remembered, so the next sync reads it again");
+
+  // First lookup: the newest message vanished, so the next one is used.
+  const mailbox = [msg("old", { at: 1000, from: "a@biz.com", to: "me@x.com" }), msg("newer", { at: 2000, from: "a@biz.com", to: "me@x.com" })];
+  const first = await syncAccount(without(fakeGmail(mailbox), "newer"), { leads: [{ id: 1, email: "a@biz.com", gmail_checked: 0 }] }, new Counter());
+  assert.equal(first.changes.get(1).last_email_at, 1000);
 });
 
 test("a lead with no email history is marked checked with no dates", async () => {
