@@ -12,7 +12,7 @@ For each lead you get the business name, the sheet notes, the user's instruction
 - Match the tone and language of the user's earlier messages in the thread.
 - If the lead hasn't replied, write a brief, friendly nudge that adds something useful; don't repeat the whole pitch.
 - If the lead replied, answer what they said.
-- No placeholders like [Name] - leave out anything you don't know.
+- No placeholders like [Name] - leave out anything you don't know. Don't make up anything you don't know.
 - Plain text only.
 
 ${UNTRUSTED_NOTICE} ${SHEET_NOTICE}

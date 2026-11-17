@@ -7,7 +7,7 @@ import path from "node:path";
 // DB_PATH is read when db.js loads, so point it at a temp file first.
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), "leads-db-"));
 process.env.LEADS_DB = path.join(dir, "leads.db");
-const { DB_PATH, deleteDb, getDb, init } = await import("../src/db.js");
+const { DB_PATH, dbVersion, deleteDb, getDb, init } = await import("../src/db.js");
 const { DatabaseSync } = await import("node:sqlite");
 
 test("an older cache sends its 'received' leads back to Gmail for a fresh look", () => {
@@ -37,4 +37,20 @@ test("deleteDb removes the cache files and the next getDb starts empty", () => {
   assert.equal(getDb().prepare("SELECT COUNT(*) AS n FROM leads").get().n, 0);
   deleteDb();
   fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test("dbVersion moves on every write, from this connection or another, and never repeats after a reset", () => {
+  const v1 = dbVersion();
+  getDb().prepare("SELECT COUNT(*) FROM leads").get();
+  assert.equal(dbVersion(), v1, "reads don't change it");
+  getDb().prepare("INSERT INTO tab_state (source_id, tab, ok) VALUES ('s', 'v', 1)").run();
+  const v2 = dbVersion();
+  assert.notEqual(v2, v1, "a write on this connection");
+  const other = new DatabaseSync(DB_PATH);
+  other.prepare("DELETE FROM tab_state WHERE tab = 'v'").run();
+  other.close();
+  const v3 = dbVersion();
+  assert.notEqual(v3, v2, "a write from another connection");
+  deleteDb();
+  assert.ok(![v1, v2, v3].includes(dbVersion()), "a fresh database after a reset");
 });

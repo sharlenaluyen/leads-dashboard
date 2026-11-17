@@ -3,11 +3,14 @@ import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { UserError } from "./errors.js";
+import { cachedByFile, fileSignature } from "./fileCache.js";
 
 export const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const SETTINGS_PATH = path.join(ROOT, "config", "settings.json");
-const SOURCES_PATH = path.join(ROOT, "config", "sources.json");
-const STARS_PATH = path.join(ROOT, "config", "stars.json");
+// LEADS_CONFIG_DIR is for tests, so they never touch your real config.
+const CONFIG_DIR = process.env.LEADS_CONFIG_DIR || path.join(ROOT, "config");
+const SETTINGS_PATH = path.join(CONFIG_DIR, "settings.json");
+const SOURCES_PATH = path.join(CONFIG_DIR, "sources.json");
+const STARS_PATH = path.join(CONFIG_DIR, "stars.json");
 // Written by a running server (npm start / npm run dev), so npm run rebuild
 // can refuse to delete the database out from under it.
 export const SERVER_PID_PATH = path.join(ROOT, "data", "server.pid");
@@ -153,8 +156,34 @@ function writeJsonAtomic(file, value) {
   fsyncPath(path.dirname(file));
 }
 
+// The config files are read many times per request (once per lead during a
+// sync or a drafting run), so each is kept parsed in memory until it changes
+// on disk. Callers get their own copy, free to modify.
+const configCaches = new Map(
+  [
+    [SETTINGS_PATH, {}],
+    [SOURCES_PATH, []],
+    [STARS_PATH, []],
+  ].map(([file, fallback]) => [file, cachedByFile(file, () => readJson(file, fallback))])
+);
+
+function readConfig(file) {
+  return structuredClone(configCaches.get(file).get());
+}
+
+function writeConfig(file, value) {
+  writeJsonAtomic(file, value);
+  // What a fresh read of the file would give.
+  configCaches.get(file).set(JSON.parse(JSON.stringify(value)));
+}
+
+// Changes whenever any config file does (see /api/state's ETag).
+export function configVersion() {
+  return [SETTINGS_PATH, SOURCES_PATH, STARS_PATH].map(fileSignature).join("|");
+}
+
 export function loadSettings() {
-  return { ...DEFAULT_SETTINGS, ...readJson(SETTINGS_PATH, {}) };
+  return { ...DEFAULT_SETTINGS, ...readConfig(SETTINGS_PATH) };
 }
 
 export const DRAFTERS = ["claude-code", "api"];
@@ -283,10 +312,10 @@ export function saveSettings(change) {
     if (!SETTING_RULES[key]) throw new UserError(`"${key}" isn't a setting the dashboard can change`);
     clean[key] = SETTING_RULES[key](value);
   }
-  const saved = readJson(SETTINGS_PATH, {});
+  const saved = readConfig(SETTINGS_PATH);
   const next = { ...DEFAULT_SETTINGS, ...saved, ...clean };
   if (next.overdueDays <= next.dueSoonDays) throw new UserError(`Overdue must be more days than Due soon (${next.dueSoonDays})`);
-  writeJsonAtomic(SETTINGS_PATH, { ...saved, ...clean });
+  writeConfig(SETTINGS_PATH, { ...saved, ...clean });
   return loadSettings();
 }
 
@@ -294,11 +323,11 @@ export function saveSettings(change) {
 // than SQLite: deleting the database (a rebuildable cache) never loses them.
 // Shape: [{ id, name, spreadsheetId, account, tabs: [title], customStatuses: [] }]
 export function loadSources() {
-  return readJson(SOURCES_PATH, []);
+  return readConfig(SOURCES_PATH);
 }
 
 export function saveSources(sources) {
-  writeJsonAtomic(SOURCES_PATH, sources);
+  writeConfig(SOURCES_PATH, sources);
 }
 
 export function getSource(id) {
@@ -352,7 +381,7 @@ export function statusesFor(source) {
 // cache's row id, which changes on a rebuild.
 // Shape: [{ source, tab, email }]
 export function loadStars() {
-  return readJson(STARS_PATH, []);
+  return readConfig(STARS_PATH);
 }
 
 export const starKey = (source, tab, email) => JSON.stringify([source, tab, String(email).toLowerCase()]);
@@ -360,12 +389,12 @@ export const starKey = (source, tab, email) => JSON.stringify([source, tab, Stri
 export function setStar({ source, tab, email }, starred) {
   const key = starKey(source, tab, email);
   const others = loadStars().filter((s) => starKey(s.source, s.tab, s.email) !== key);
-  writeJsonAtomic(STARS_PATH, starred ? [...others, { source, tab, email: String(email).toLowerCase() }] : others);
+  writeConfig(STARS_PATH, starred ? [...others, { source, tab, email: String(email).toLowerCase() }] : others);
 }
 
 // Drops every star in a section, when the section is removed.
 export function dropStarsFor(sourceId) {
   const stars = loadStars();
   const kept = stars.filter((s) => s.source !== sourceId);
-  if (kept.length !== stars.length) writeJsonAtomic(STARS_PATH, kept);
+  if (kept.length !== stars.length) writeConfig(STARS_PATH, kept);
 }

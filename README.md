@@ -22,10 +22,10 @@ Gmail ──(1) what changed──► sync ──(2) changed cells only──►
  drafts, threads             └ SQLite: bookmarks only          notes, manual statuses
 ```
 
-- Sign-in comes from [google-mcp-accounts](../google%20workspace%20mcp%20servers/google-mcp-accounts):
+- Sign-in comes from [google-mcp-accounts](https://github.com/sharlenaluyen/google-mcp-accounts):
   the same `~/.google-mcp/accounts.json` the MCP servers use. No extra
   Google Cloud setup.
-- Gmail helpers come from [multi-gmail-mcp](../google%20workspace%20mcp%20servers/multi-gmail-mcp)'s
+- Gmail helpers come from [multi-gmail-mcp](https://github.com/sharlenaluyen/multi-gmail-mcp)'s
   `src/gmail.js`, which handles message building, header-injection guards,
   reply state and untrusted-content wrapping.
 - Sheet edits and drafts are logged to the shared `~/.google-mcp/audit.log`
@@ -38,8 +38,12 @@ npm install
 npm start          # http://localhost:3000
 ```
 
-Needs Node 22.13+ (for the built-in `node:sqlite`). Both sibling repos must
-sit in `../google workspace mcp servers/`
+Needs Node 22.13+ (for the built-in `node:sqlite`). `npm install` fetches
+google-mcp-accounts and multi-gmail-mcp from GitHub at the commits pinned in
+`package.json` (the `overrides` entry makes multi-gmail-mcp use the same
+google-mcp-accounts). To pick up a newer commit of either, change its hash
+there and run `npm install`. To try local changes to them first, run
+`npm link` in that repo and `npm link <name>` here; `npm install` undoes it.
 
 ## Spreadsheet columns
 
@@ -348,7 +352,9 @@ through when the row still holds the same email and the cell hasn't changed
 again since. That check also makes it safe when a crash came between
 logging and writing.
 Undoing an email column lasts until the next sync, since Gmail owns those.
-Rebuilding the cache never touches this file. Each sync's writes are also
+Rebuilding the cache never touches this file. It's never rotated either:
+History and Undo read it backward from the end, so only the newest entries
+are read however long it grows. Each sync's writes are also
 summarized in the shared `~/.google-mcp/audit.log`.
 
 While a sync runs, a notice asks you not to edit the spreadsheet or draft
@@ -497,11 +503,24 @@ using old sign-ins until it restarts.
 ## Development
 
 ```bash
-npm test           # parsing, header checks, Gmail sync logic, prompt building, change log, write lock
+npm test           # parsing, header checks, Gmail sync logic, prompt building, change log and undo,
+                   # write lock, config and account caching, /api/state ETag
+npm run lint       # ESLint
 npm run rebuild    # wipe the SQLite cache and resync (stop the server first;
                    # with it running, use Settings → Hard reset instead)
 npm run dev        # restart on file changes
 ```
+
+GitHub Actions (`.github/workflows/ci.yml`) runs `npm ci`, `npm run lint` and
+`npm test` on Node 22.13, 22 and 24 for every push to main and every pull
+request.
+
+The config files (`config/*.json`, `~/.google-mcp/accounts.json`) are kept
+parsed in memory and re-read only when they change on disk (one `stat` per
+lookup), so hand edits and sign-ins still apply without a restart.
+`/api/state` sends an ETag built from the versions of the database and those
+files; when nothing changed, the page's reload gets a `304 Not Modified`
+instead of every lead.
 
 The server listens on 127.0.0.1 only and rejects requests from other origins,
 because it can write to your sheets and Gmail.

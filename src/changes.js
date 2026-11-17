@@ -62,32 +62,71 @@ export function markFailed(entries, err) {
   appendLines(entries.map((e) => ({ id: crypto.randomBytes(6).toString("hex"), at, failedOf: e.id, error: String(err?.message || err) })));
 }
 
-function readAll() {
-  if (!fs.existsSync(CHANGES_PATH)) return [];
-  return fs
-    .readFileSync(CHANGES_PATH, "utf8")
-    .split("\n")
-    .filter(Boolean)
-    .flatMap((line) => {
-      try {
-        return [JSON.parse(line)];
-      } catch {
-        return [];
-      }
-    });
+// Bytes read per step when reading the log backward.
+const CHUNK = 64 * 1024;
+
+function parseLine(bytes) {
+  try {
+    return bytes.length ? [JSON.parse(bytes.toString("utf8"))] : [];
+  } catch {
+    return []; // a line cut off by a crash
+  }
 }
 
-// Newest first, each marked with whether it has been undone or its write
-// failed.
+// The log's entries newest first, read backward from the end of the file in
+// chunks, so a caller that stops early never reads the older part. The log
+// is never rotated, so this keeps /api/changes and undo fast as it grows.
+// A marker (failedOf, undoOf) is always appended after the entry it refers
+// to, so by the time an entry comes up, all of its markers have too.
+// Lines are split on the newline byte, which never occurs inside a
+// multi-byte UTF-8 character.
+export function* newestFirst() {
+  let fd;
+  try {
+    fd = fs.openSync(CHANGES_PATH, "r");
+  } catch (err) {
+    if (err.code === "ENOENT") return;
+    throw err;
+  }
+  try {
+    let pos = fs.fstatSync(fd).size;
+    let rest = Buffer.alloc(0); // the start of the file up to the last newline seen
+    while (pos > 0) {
+      const size = Math.min(CHUNK, pos);
+      pos -= size;
+      const chunk = Buffer.alloc(size);
+      fs.readSync(fd, chunk, 0, size, pos);
+      const buf = rest.length ? Buffer.concat([chunk, rest]) : chunk;
+      let end = buf.length;
+      let nl;
+      while (end > 0 && (nl = buf.lastIndexOf(0x0a, end - 1)) !== -1) {
+        yield* parseLine(buf.subarray(nl + 1, end));
+        end = nl;
+      }
+      rest = buf.subarray(0, end);
+    }
+    yield* parseLine(rest);
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+// Newest first, each marked with whether it has been undone (by an undo
+// that reached the sheet) or its write failed.
 export function readChanges({ limit = 300 } = {}) {
-  const all = readAll();
-  const undone = new Set(all.filter((e) => e.undoOf).map((e) => e.undoOf));
-  const failed = new Map(all.filter((e) => e.failedOf).map((e) => [e.failedOf, e.error]));
-  return all
-    .filter((e) => !e.failedOf)
-    .slice(-limit)
-    .reverse()
-    .map((e) => ({ ...e, undone: undone.has(e.id), ...(failed.has(e.id) ? { failed: failed.get(e.id) || true } : {}) }));
+  const undone = new Set();
+  const failed = new Map();
+  const out = [];
+  for (const e of newestFirst()) {
+    if (e.failedOf) {
+      failed.set(e.failedOf, e.error);
+      continue;
+    }
+    if (e.undoOf && !failed.has(e.id)) undone.add(e.undoOf);
+    out.push({ ...e, undone: undone.has(e.id), ...(failed.has(e.id) ? { failed: failed.get(e.id) || true } : {}) });
+    if (out.length >= limit) break;
+  }
+  return out;
 }
 
 const sameCell = (key, a, b) => {
@@ -104,15 +143,33 @@ export function undoChange(id) {
   return withSheetLock(() => undoChangeNow(id));
 }
 
+/**
+ * The logged entry `id` names, if it can be undone; otherwise throws a
+ * UserError saying why not. Reads back only as far as the entry, since
+ * everything about it (failure markers, undos of it) is newer.
+ * Exported for tests.
+ */
+export function findUndoTarget(id) {
+  let entry;
+  let alreadyUndone = false;
+  const failed = new Set();
+  for (const e of newestFirst()) {
+    if (e.failedOf) failed.add(e.failedOf);
+    else if (e.id === id) {
+      entry = e;
+      break;
+    } else if (e.undoOf === id && !failed.has(e.id)) alreadyUndone = true;
+  }
+  if (!entry) throw new UserError("That change isn't in the log.");
+  if (failed.has(id)) throw new UserError("That change never reached the spreadsheet, so there's nothing to undo.");
+  if (alreadyUndone) throw new UserError("That change was already undone.");
+  if (entry.by === "add-contact") throw new UserError("To undo an added row, delete the row in the spreadsheet.");
+  return entry;
+}
+
 async function undoChangeNow(id) {
   if (!loadSettings().writeBack) throw new UserError("Writing to spreadsheets is turned off (Settings → Write to spreadsheets).");
-  const all = readAll();
-  const entry = all.find((e) => e.id === id && !e.failedOf);
-  if (!entry) throw new UserError("That change isn't in the log.");
-  const failed = new Set(all.filter((e) => e.failedOf).map((e) => e.failedOf));
-  if (failed.has(id)) throw new UserError("That change never reached the spreadsheet, so there's nothing to undo.");
-  if (all.some((e) => e.undoOf === id && !failed.has(e.id))) throw new UserError("That change was already undone.");
-  if (entry.by === "add-contact") throw new UserError("To undo an added row, delete the row in the spreadsheet.");
+  const entry = findUndoTarget(id);
   const source = getSource(entry.source);
   const sheets = sheetsClientFor(source.account);
   const counter = new CallCounter();
