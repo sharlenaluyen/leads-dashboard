@@ -7,6 +7,7 @@ import { dbVersion, getDb } from "./db.js";
 import { CallCounter, accountsVersion, explainGoogleError, getAccountInfo, getConnectedAliases, sheetsClientFor } from "./google.js";
 import { listTabs, parseSheetDate, spreadsheetIdFrom } from "./sheets.js";
 import { runReset, runSync } from "./sync.js";
+import { followUpsSent } from "./gmailSync.js";
 import { setLeadField } from "./edits.js";
 import { generateDrafts, saveDraft } from "./drafts.js";
 import { readChanges, undoChange } from "./changes.js";
@@ -78,6 +79,9 @@ function leadView(l, stars = new Set(loadStars().map((s) => starKey(s.source, s.
     lastEmailDir: ["sent", "received", "bounced"].includes(l.sheet_last_dir) ? l.sheet_last_dir : null,
     lastFollowedUpAt: parseSheetDate(l.sheet_last_followed),
     gmailChecked: Boolean(l.gmail_checked),
+    // Counted from Gmail, which the sheet has no column for: the emails
+    // you've sent since their last reply, after the first.
+    followUpsSent: followUpsSent(l),
   };
 }
 
@@ -150,6 +154,7 @@ function settingsView(s) {
     dueSoonDays: s.dueSoonDays,
     overdueDays: s.overdueDays,
     followUpBy: s.followUpBy,
+    maxFollowUps: s.maxFollowUps ?? null,
     autoSync: s.autoSync,
     draftTone: s.draftTone || "",
     draftSignOff: s.draftSignOff || "",

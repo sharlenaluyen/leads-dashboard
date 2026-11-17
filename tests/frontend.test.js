@@ -452,6 +452,30 @@ test("follow-up timing sets the age colors, and can flag overdue rows to follow 
   assert.equal(row(page, "New").querySelector(".action").textContent, "Waiting");
 });
 
+test("the follow-up limit: rows show their count, and one at the limit isn't flagged to follow up", async () => {
+  const sent = (businessName, followUpsSent) => lead({ businessName, lastEmailAt: daysAgo(5), lastEmailDir: "sent", lastFollowedUpAt: daysAgo(5), followUpsSent, priority: 3 });
+  const leads = [sent("None", 0), sent("One", 1), sent("Two", 2), lead({ businessName: "Replied", lastEmailAt: daysAgo(5), lastEmailDir: "received", followUpsSent: 0 })];
+  const count = (name) => row(page, name).querySelector(".follow-ups")?.textContent ?? null;
+  const action = (name) => row(page, name).querySelector(".action").textContent;
+
+  page = await boot(appState({ sources: [source("a", leads)] }));
+  assert.deepEqual(["None", "One", "Two", "Replied"].map(count), [null, "1 follow-up", "2 follow-ups", null], "with no limit, just the count");
+  assert.equal(action("Two"), "Follow up");
+  page.close();
+
+  page = await boot(appState({ sources: [source("a", leads)], settings: { maxFollowUps: 2 } }));
+  assert.deepEqual(["None", "One", "Two", "Replied"].map(count), ["0 of 2 follow-ups", "1 of 2 follow-ups", "2 of 2 follow-ups", null]);
+  assert.equal(action("One"), "Follow up");
+  assert.equal(action("Two"), "Last follow-up sent", "even at priority 3");
+  assert.equal(action("Replied"), "Reply");
+
+  check(page, "One");
+  check(page, "Two");
+  page.$("#draft-btn").click();
+  assert.equal(page.$("#draft-limit-note").hidden, false);
+  assert.match(page.$("#draft-limit-note").textContent, /^1 lead has already had the most follow-ups you allow \(2\) with no reply: Two\./);
+});
+
 test("rows sort by the chosen order", async () => {
   const leads = [
     lead({ businessName: "Bravo", priority: 1, lastEmailAt: daysAgo(2), lastEmailDir: "sent" }),

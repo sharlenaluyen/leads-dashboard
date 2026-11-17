@@ -1,8 +1,8 @@
 import { extractEmailAddress } from "multi-gmail-mcp/src/gmail.js";
-import { addCustomStatuses, loadSettings, loadSources, statusesFor } from "./config.js";
+import { NO_REPLY_STATUS, addCustomStatuses, loadSettings, loadSources, statusesFor } from "./config.js";
 import { deleteDb, getDb, transaction } from "./db.js";
 import { CallCounter, audit, explainGoogleError, gmailClientFor, getAccountInfo, googleSaid, sheetsClientFor } from "./google.js";
-import { syncAccount } from "./gmailSync.js";
+import { followUpsSent, syncAccount } from "./gmailSync.js";
 import { logChanges, markFailed } from "./changes.js";
 import { withSheetLock } from "./lock.js";
 import { cellRange, emailsIn, formatDate, listTabs, parsePriority, parseSheetDate, parseTab, readTabs, rowHash, writeCells } from "./sheets.js";
@@ -15,6 +15,7 @@ const LEAD_FIELDS = [
   "last_sent_id",
   "thread_id",
   "gmail_draft_id",
+  "sent_streak",
   "gmail_checked",
 ];
 
@@ -265,15 +266,23 @@ function queueForReview(adds, alias) {
 
 const DATE_KEYS = new Set(["lastEmail", "lastFollowedUp"]);
 
+// Whether a lead has had every follow-up it's going to get: you sent last,
+// and the follow-ups since their last reply have reached Settings → Max
+// follow-ups (null is no limit).
+export function atFollowUpLimit(lead, maxFollowUps = null) {
+  return maxFollowUps != null && lead.last_email_dir === "sent" && followUpsSent(lead) >= maxFollowUps;
+}
+
 // The follow-up status Gmail implies, or null to leave the current one alone.
 //   elsewhere: the sheet shows outreach Gmail has no trace of
 //   reopen:    a new reply arrived, so a Closed status gives way
-export function autoStatus(lead, current, { elsewhere = false, reopen = false } = {}) {
+//   capped:    you just sent the last follow-up they get (atFollowUpLimit)
+export function autoStatus(lead, current, { elsewhere = false, reopen = false, capped = false } = {}) {
   const now = String(current || "").trim().toLowerCase();
   if (!AUTO_STATUSES.includes(now) && !(reopen && isClosed(now))) return null;
   if (elsewhere) return "Contacted elsewhere";
   if (lead.gmail_draft_id || lead.last_email_dir === "received" || lead.last_email_dir === "bounced") return "Pending action";
-  if (lead.last_email_dir === "sent") return "Awaiting Reply";
+  if (lead.last_email_dir === "sent") return capped ? NO_REPLY_STATUS : "Awaiting Reply";
   return "Open";
 }
 
@@ -282,7 +291,9 @@ const sheetValue = (row, key) => String((key === "priority" ? row.priorityRaw : 
 
 // The Gmail-owned cells whose sheet value differs from what Gmail says.
 //   newReply: this lead got a new reply this sync (reopens a Closed row)
-export function pendingWrites(lead, sheetRow, { newReply = false } = {}) {
+//   maxFollowUps: Settings → Max follow-ups, for closing a row that's had
+//             its last follow-up
+export function pendingWrites(lead, sheetRow, { newReply = false, maxFollowUps = null } = {}) {
   if (!lead.gmail_checked) return [];
   // The sheet shows a date but Gmail has no email with them at all: the
   // outreach happened somewhere else. Keep the sheet's dates.
@@ -297,7 +308,7 @@ export function pendingWrites(lead, sheetRow, { newReply = false } = {}) {
       };
   want.draftId = lead.gmail_draft_id || "";
   const reopen = newReply && isClosed(sheetRow.followUpStatus);
-  const status = autoStatus(lead, sheetRow.followUpStatus, { elsewhere, reopen });
+  const status = autoStatus(lead, sheetRow.followUpStatus, { elsewhere, reopen, capped: atFollowUpLimit(lead, maxFollowUps) });
   if (status !== null) want.followUpStatus = status;
   // Priority 0 means "closed out"; a reopened row shouldn't keep it.
   if (reopen && sheetValue(sheetRow, "priority") === "0") want.priority = "";
@@ -383,8 +394,9 @@ async function writeBack(source, sheetRows, counter, summary, { adds = [] } = {}
   const replies = new Set(
     db.prepare("SELECT p.lead_id FROM pending_reopen p JOIN leads l ON l.id = p.lead_id WHERE l.source_id = ?").all(source.id).map((r) => r.lead_id)
   );
+  const { maxFollowUps } = loadSettings();
   const gmailWrites = leads.flatMap((lead) =>
-    sheetRows.has(lead.id) ? pendingWrites(lead, sheetRows.get(lead.id), { newReply: replies.has(lead.id) }) : []
+    sheetRows.has(lead.id) ? pendingWrites(lead, sheetRows.get(lead.id), { newReply: replies.has(lead.id), maxFollowUps }) : []
   );
   // A lead whose tab couldn't be read this sync: its new people wait in the
   // review list instead.

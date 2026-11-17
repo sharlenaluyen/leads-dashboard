@@ -406,6 +406,7 @@ const ACTIONS = [
   { key: "nudge", label: "Follow up", title: "Waiting on them and overdue (priority 3, or past the Overdue days in Settings)" },
   { key: "first", label: "First email", title: "Never emailed" },
   { key: "wait", label: "Waiting", title: "You sent last; waiting on their reply" },
+  { key: "last", label: "Last follow-up sent", title: "You've sent the most follow-ups Settings allows, so no more are suggested. Sync closes the row unless its status is one you set; a reply reopens it" },
   { key: "none", label: "No action", title: "Closed, confirmed or priority 0" },
 ];
 
@@ -415,6 +416,10 @@ const timingOf = (ms) => {
   const days = daysSince(ms);
   return days > state.settings.overdueDays ? "overdue" : days > state.settings.dueSoonDays ? "due" : "recent";
 };
+
+// Whether a lead has had every follow-up Settings → Max follow-ups allows:
+// you sent last, and the follow-ups since their last reply are at the limit.
+const atFollowUpLimit = (l) => state.settings.maxFollowUps != null && l.lastEmailDir === "sent" && (l.followUpsSent ?? 0) >= state.settings.maxFollowUps;
 
 function nextAction(l) {
   const none = isClosed(l.followUpStatus) || /^confirmed$/i.test(l.followUpStatus.trim()) || l.priority === 0;
@@ -431,9 +436,11 @@ function nextAction(l) {
           ? "send"
           : !l.lastEmailAt
             ? "first"
-            : nudge
-              ? "nudge"
-              : "wait";
+            : atFollowUpLimit(l)
+              ? "last"
+              : nudge
+                ? "nudge"
+                : "wait";
   const i = ACTIONS.findIndex((a) => a.key === key);
   return { rank: i, ...ACTIONS[i] };
 }
@@ -1228,6 +1235,17 @@ function isoDate(ms) {
 }
 const showDate = (ms) => ({ relative: ago, absolute: isoDate }[state.settings.dateFormat] || fmtDate)(ms);
 
+// "1 of 2 follow-ups" under the last-followed-up date, while you're the one
+// waiting: how many emails you've sent since their last reply, after the first.
+function followUpCount(lead) {
+  if (lead.lastEmailDir !== "sent" || lead.followUpsSent == null) return null;
+  const n = lead.followUpsSent;
+  const max = state.settings.maxFollowUps;
+  if (max == null && n === 0) return null;
+  const text = max == null ? `${n} follow-up${n === 1 ? "" : "s"}` : `${n} of ${max} follow-up${max === 1 ? "" : "s"}`;
+  return el("div", { class: `sub follow-ups${atFollowUpLimit(lead) ? " at-limit" : ""}`, title: "Emails you've sent since their last reply, not counting the first" }, text);
+}
+
 function renderRow(source, lead, { label = false } = {}) {
   const writable = state.settings.writeBack;
   const offTitle = writable ? undefined : "Writing to spreadsheets is turned off in Settings";
@@ -1312,7 +1330,7 @@ function renderRow(source, lead, { label = false } = {}) {
       el("div", { class: "sub col-details" }, label ? lead.emails.join(", ") : `${lead.emails.join(", ")} · ${lead.tab}`)
     ),
     lastCell,
-    el("td", { class: "when col-lastFollowedUp" }, lead.lastFollowedUpAt ? showDate(lead.lastFollowedUpAt) : el("span", { class: "muted" }, "–")),
+    el("td", { class: "when col-lastFollowedUp" }, lead.lastFollowedUpAt ? showDate(lead.lastFollowedUpAt) : el("span", { class: "muted" }, "–"), followUpCount(lead)),
     el("td", { class: "col-priority" }, priority),
     el("td", { class: "col-status" }, status)
   );
@@ -1494,7 +1512,20 @@ function renderTemplatePicker() {
   renderTemplateNote();
 }
 
+// A heads-up, not a block: these leads have had every follow-up Settings →
+// Max follow-ups allows, and you may still have a reason to write.
+function renderDraftLimitNote() {
+  const over = state.sources.flatMap((s) => s.leads.filter((l) => selected.has(l.id) && atFollowUpLimit(l)));
+  const note = $("#draft-limit-note");
+  note.hidden = !over.length;
+  if (!over.length) return;
+  const max = state.settings.maxFollowUps;
+  const names = over.slice(0, 3).map((l) => l.businessName || l.email).join(", ") + (over.length > 3 ? ` and ${over.length - 3} more` : "");
+  note.textContent = `${over.length === 1 ? "1 lead has" : `${over.length} leads have`} already had the most follow-ups you allow (${max}) with no reply: ${names}. Untick them if you don't want to email them again.`;
+}
+
 function renderTemplateNote() {
+  renderDraftLimitNote();
   const t = (state.settings.draftTemplates || []).find((x) => x.id === $("#draft-template").value);
   const n = selected.size;
   const leads = `${n} lead${n === 1 ? "" : "s"}`;

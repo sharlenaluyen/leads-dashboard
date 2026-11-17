@@ -146,6 +146,7 @@ export function summarizeMessage(msg) {
   };
 }
 
+const META_HEADERS = ["From", "To", "Cc", "Date", "List-Unsubscribe", "Precedence", ...AUTOMATION_HEADERS];
 const isNotFound = (err) => err?.code === 404 || err?.response?.status === 404;
 
 // `why` says which part of the sync wanted the message ("a Gmail draft"),
@@ -164,7 +165,7 @@ async function getMeta(gmail, id, counter, why) {
           userId: "me",
           id,
           format: "metadata",
-          metadataHeaders: ["From", "To", "Cc", "Date", "List-Unsubscribe", "Precedence", ...AUTOMATION_HEADERS],
+          metadataHeaders: META_HEADERS,
         })
       )
     );
@@ -204,8 +205,15 @@ async function listDrafts(gmail, counter) {
   return drafts;
 }
 
+// How many follow-ups a lead has had: the emails you've sent in a row since
+// their last reply, not counting the first of them (your opening email, or
+// your answer to their reply).
+export const followUpsSent = (lead) => Math.max(0, (lead.sent_streak || 0) - 1);
+
 // Applies one message to a lead's Gmail fields. Returns the new fields if
-// anything changed, else null.
+// anything changed, else null. Messages must come oldest first for
+// sent_streak (your emails in a row since their last reply) to count right;
+// one older than the lead's newest email never changes it.
 export function applyMessage(lead, m) {
   const change = {};
   if (lead.last_email_at == null || m.at > lead.last_email_at) {
@@ -213,6 +221,12 @@ export function applyMessage(lead, m) {
     change.last_email_dir = m.dir;
     change.last_message_id = m.id;
     change.thread_id = m.threadId;
+    const streak = lead.sent_streak || 0;
+    if (m.dir === "sent") change.sent_streak = streak + 1;
+    else if (m.dir === "received") change.sent_streak = 0;
+    // A bounce isn't a reply, and the email it bounced never arrived, so
+    // that one comes off the count (once, however many notices follow).
+    else if (m.dir === "bounced" && lead.last_email_dir === "sent" && streak > 0) change.sent_streak = streak - 1;
   }
   if (m.dir === "sent" && (lead.last_followed_up_at == null || m.at > lead.last_followed_up_at)) {
     change.last_followed_up_at = m.at;
@@ -221,10 +235,33 @@ export function applyMessage(lead, m) {
   return Object.keys(change).length ? change : null;
 }
 
+// Every message in a thread, with the same headers getMeta reads, in one
+// call: Map(id -> message). Empty when the thread no longer exists.
+async function getThread(gmail, threadId, counter, why) {
+  try {
+    const { data } = await during(`Reading Gmail thread ${threadId} (${why})`, () =>
+      counter.run(() => gmail.users.threads.get({ userId: "me", id: threadId, format: "metadata", metadataHeaders: META_HEADERS }))
+    );
+    return new Map((data.messages || []).map((m) => [m.id, m]));
+  } catch (err) {
+    if (isNotFound(err)) return new Map();
+    throw err;
+  }
+}
+
 // A full look at one lead, from scratch: its threads, its newest message
-// either way, and its newest sent one. Three calls, plus one for each
-// automatic reply passed over (up to AUTO_REPLY_SCAN).
+// either way, its newest sent one, and how many emails you've sent in a row
+// since their last reply.
+//
+// Messages are read a thread at a time, so follow-ups sent as replies in one
+// thread cost one call however many there are. That makes two calls when
+// you sent last (the search, then the thread), three when they did (one
+// more search, for your newest email), plus one for each further thread
+// that has to be read: the newest AUTO_REPLY_SCAN messages are looked at to
+// find one that isn't an automatic reply, and STREAK_SCAN to count back to
+// their last reply.
 const AUTO_REPLY_SCAN = 5;
+const STREAK_SCAN = 12;
 async function backfillLead(gmail, lead, counter) {
   const found = await listIds(gmail, addressQuery(addressesOf(lead)), counter, { max: THREADS_PER_LEAD, what: `mail with ${lead.email}` });
   const change = {
@@ -235,26 +272,65 @@ async function backfillLead(gmail, lead, counter) {
     thread_id: null,
     last_followed_up_at: null,
     last_sent_id: null,
+    sent_streak: 0,
     threads: new Set(found.map((m) => m.threadId)),
     replaceThreads: true,
   };
   if (!found.length) return change;
+  // Every real message in the threads read so far. Reading a thread also
+  // brings in what the search can't find by address: a bounce, or a reply
+  // from someone else at their company.
+  const pool = new Map();
+  const loaded = new Set();
+  const load = async (threadId) => {
+    if (loaded.has(threadId)) return;
+    loaded.add(threadId);
+    const thread = await getThread(gmail, threadId, counter, `mail with ${lead.email}`);
+    for (const msg of thread.values()) if (!isIgnored(msg.labelIds)) pool.set(msg.id, summarizeMessage(msg));
+  };
+  // Newest first: the first real message is the newest; from there, count
+  // your emails back to their last reply. An email that bounced isn't
+  // counted: its bounce is met first, and cancels it.
   let newest = null;
-  for (const { id } of found.slice(0, AUTO_REPLY_SCAN)) {
-    const meta = await getMeta(gmail, id, counter, `newest mail with ${lead.email}`);
-    if (!meta) continue;
-    const m = summarizeMessage(meta);
-    if (!m.skip) {
-      newest = m;
-      break;
+  let newestSent = null;
+  let streak = 0;
+  let bounced = false;
+  let replyFound = false;
+  const seen = new Set();
+  const take = (m) => {
+    seen.add(m.id);
+    if (m.skip) return;
+    newest ??= m;
+    if (m.dir === "received") replyFound = true;
+    else if (m.dir === "bounced") bounced = true;
+    else {
+      newestSent ??= m;
+      if (!bounced) streak++;
+      bounced = false;
     }
+  };
+  // Takes the messages read so far that are no older than `from`.
+  const takeBackTo = (from) => {
+    const next = [...pool.values()].filter((m) => !seen.has(m.id) && m.at >= from).sort((x, y) => y.at - x.at);
+    for (const m of next) if (!replyFound) take(m);
+  };
+  for (const [i, ref] of found.slice(0, STREAK_SCAN).entries()) {
+    if (replyFound || (!newest && i >= AUTO_REPLY_SCAN)) break;
+    await load(ref.threadId);
+    // Missing when it was deleted since the search.
+    if (pool.has(ref.id)) takeBackTo(pool.get(ref.id).at);
   }
+  // Every match was read: what's left in those threads is older still.
+  if (found.length <= STREAK_SCAN) takeBackTo(-Infinity);
   if (newest) Object.assign(change, applyMessage({}, newest));
-  if (newest?.dir !== "sent") {
+  // Your newest email, when the scan above didn't pass it.
+  if (!newestSent) {
     const [sent] = await listIds(gmail, addressQuery(addressesOf(lead), { sentOnly: true }), counter, { max: 1, what: `mail you sent to ${lead.email}` });
-    const meta = sent && (await getMeta(gmail, sent.id, counter, `your last email to ${lead.email}`));
-    if (meta) Object.assign(change, applyMessage(change, summarizeMessage(meta)));
+    if (sent) await load(sent.threadId);
+    newestSent = (sent && pool.get(sent.id)) || null;
   }
+  if (newestSent) Object.assign(change, applyMessage(change, newestSent));
+  change.sent_streak = streak;
   return change;
 }
 
@@ -327,6 +403,8 @@ async function historySince(gmail, historyId, counter) {
  *
  * Returns {
  *   changes:   Map(leadId -> fields, plus `threads` to add and `replaceThreads`)
+ *              `sent_streak` is the emails you've sent in a row since their
+ *              last reply (see followUpsSent)
  *   cursor:    { history_id, synced_at }
  *   draftMeta: the new Map when drafts were rechecked, else undefined
  *   contacts:  Map(email -> { email, name, firstAt, lastAt, lastDir, threadId, messageId, count, viaLead })
@@ -337,7 +415,7 @@ async function historySince(gmail, historyId, counter) {
  * }
  *
  * Cost: when nothing happened since the last sync this is one history.list
- * call. A new or reset lead costs up to three calls, once. Drafts cost one
+ * call. A new or reset lead costs two or three calls, once (see backfillLead). Drafts cost one
  * list call, plus one per new draft, and only when a draft changed. Finding
  * new contacts costs one call per new message you sent or got in your
  * inbox's Primary tab. Gmail's bulk categories never introduce a contact,
@@ -443,9 +521,12 @@ export async function syncAccount(gmail, { leads, threads = new Map(), cursor, d
 
     const metas = await mapLimit([...new Set(candidateIds)], BACKFILL_CONCURRENCY, (id) => getMeta(gmail, id, counter, "new mail since the last sync"));
     const leadEmails = new Set(byEmail.keys());
-    for (const msg of metas) {
-      if (!msg || isIgnored(msg.labelIds)) continue;
-      const m = summarizeMessage(msg);
+    // Oldest first, so a reply and your answer to it count in order.
+    const fresh = metas
+      .filter((msg) => msg && !isIgnored(msg.labelIds))
+      .map((msg) => ({ msg, m: summarizeMessage(msg) }))
+      .sort((a, b) => a.m.at - b.m.at);
+    for (const { msg, m } of fresh) {
       if (m.skip) continue;
       const threadLead = m.dir === "received" ? (byThread.get(m.threadId) || [])[0] : null;
       for (const c of introIds.has(msg.id) ? contactsIn(msg, self) : []) {

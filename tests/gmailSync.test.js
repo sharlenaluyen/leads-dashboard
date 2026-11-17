@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { applyMessage, automatedKind, contactsIn, summarizeMessage, syncAccount } from "../src/gmailSync.js";
-import { addressWrites, autoStatus, confirmRows, pendingWrites } from "../src/sync.js";
+import { applyMessage, automatedKind, contactsIn, followUpsSent, summarizeMessage, syncAccount } from "../src/gmailSync.js";
+import { addressWrites, autoStatus, confirmRows, atFollowUpLimit, pendingWrites } from "../src/sync.js";
 import { formatDate } from "../src/sheets.js";
 
 class Counter {
@@ -55,6 +55,14 @@ function fakeGmail(messages, { history = null, historyGone = false } = {}) {
         },
         get: async ({ id }) => (calls.push(`get ${id}`), { data: messages.find((m) => m.id === id) }),
       },
+      threads: {
+        get: async ({ id }) => {
+          calls.push(`thread ${id}`);
+          const found = messages.filter((m) => m.threadId === id);
+          if (!found.length) throw Object.assign(new Error("Requested entity was not found."), { code: 404 });
+          return { data: { id, messages: found } };
+        },
+      },
       drafts: {
         list: async () => {
           calls.push("drafts.list");
@@ -80,8 +88,100 @@ test("applyMessage only moves dates forward", () => {
     last_email_dir: "received",
     last_message_id: "b",
     thread_id: "t",
+    sent_streak: 0,
   });
   assert.equal(applyMessage(lead, { at: 300, dir: "sent", id: "c", threadId: "t" }).last_followed_up_at, 300);
+});
+
+test("applyMessage counts your emails in a row; a reply starts the count again", () => {
+  let lead = {};
+  const apply = (m) => (lead = { ...lead, ...applyMessage(lead, { id: `m${m.at}`, threadId: "t", ...m }) });
+  apply({ at: 100, dir: "sent" });
+  assert.equal(followUpsSent(lead), 0, "the first email isn't a follow-up");
+  apply({ at: 200, dir: "sent" });
+  apply({ at: 300, dir: "sent" });
+  assert.equal(followUpsSent(lead), 2);
+  apply({ at: 300, dir: "sent" });
+  assert.equal(followUpsSent(lead), 2, "the same email seen twice counts once");
+  apply({ at: 350, dir: "bounced" });
+  assert.equal(followUpsSent(lead), 1, "an email that bounced never arrived, so it isn't counted");
+  apply({ at: 360, dir: "bounced" });
+  assert.equal(followUpsSent(lead), 1, "a second notice for it changes nothing");
+  apply({ at: 370, dir: "sent" });
+  assert.equal(followUpsSent(lead), 2, "sent again to a fixed address");
+  apply({ at: 400, dir: "received" });
+  assert.equal(followUpsSent(lead), 0);
+  apply({ at: 150, dir: "sent" });
+  assert.equal(lead.sent_streak, 0, "an email older than their reply doesn't count");
+  apply({ at: 500, dir: "sent" });
+  assert.equal(followUpsSent(lead), 0, "your answer to their reply isn't a follow-up");
+  apply({ at: 600, dir: "sent" });
+  assert.equal(followUpsSent(lead), 1);
+});
+
+test("a first lookup counts your emails back to their last reply", async () => {
+  const mailbox = [
+    msg("s0", { at: 500, from: "me@x.com", to: "a@biz.com", sent: true }),
+    msg("r1", { at: 1000, from: "a@biz.com", to: "me@x.com" }),
+    msg("s1", { at: 2000, from: "me@x.com", to: "a@biz.com", sent: true }),
+    msg("s2", { at: 3000, from: "me@x.com", to: "a@biz.com", sent: true }),
+    msg("s3", { at: 4000, from: "me@x.com", to: "a@biz.com", sent: true }),
+    msg("b1", { at: 100, from: "b@biz.com", to: "me@x.com" }),
+    msg("b2", { at: 200, from: "me@x.com", to: "b@biz.com", sent: true }),
+    msg("c1", { at: 100, from: "me@x.com", to: "c@biz.com", sent: true }),
+    msg("c2", { at: 200, from: "c@biz.com", to: "me@x.com" }),
+  ];
+  const gmail = fakeGmail(mailbox);
+  const leads = ["a", "b", "c", "d"].map((n, i) => ({ id: i + 1, email: `${n}@biz.com`, gmail_checked: 0 }));
+  const { changes } = await syncAccount(gmail, { leads }, new Counter());
+  assert.equal(changes.get(1).sent_streak, 3);
+  assert.equal(followUpsSent(changes.get(1)), 2);
+  assert.deepEqual(gmail.calls.filter((c) => /^(get|thread) /.test(c)).sort(), ["thread t-b1", "thread t-b2", "thread t-c1", "thread t-c2", "thread t-r1", "thread t-s1", "thread t-s2", "thread t-s3"],
+    "one read per thread, never past their last reply (s0)");
+  assert.equal(followUpsSent(changes.get(2)), 0);
+  assert.equal(changes.get(3).sent_streak, 0, "they wrote last");
+  assert.equal(changes.get(4).sent_streak, 0, "never emailed");
+});
+
+test("a first lookup reads follow-ups in one thread with one call, and leaves out one that bounced", async () => {
+  const inThread = (id, opts) => msg(id, { thread: "T", ...opts });
+  const mailbox = [
+    inThread("r0", { at: 1000, from: "a@biz.com", to: "me@x.com" }),
+    inThread("s1", { at: 2000, from: "me@x.com", to: "a@biz.com", sent: true }),
+    inThread("s2", { at: 3000, from: "me@x.com", to: "a@biz.com", sent: true }),
+    inThread("s3", { at: 4000, from: "me@x.com", to: "a@biz.com", sent: true }),
+    // Not found by a search for the lead's address, only by reading the thread.
+    inThread("x3", { at: 4100, from: "Mail Delivery Subsystem <mailer-daemon@googlemail.com>", to: "me@x.com" }),
+    inThread("s4", { at: 5000, from: "me@x.com", to: "a@biz.com", sent: true }),
+    inThread("d5", { at: 6000, from: "me@x.com", to: "a@biz.com", sent: true, labels: ["DRAFT"] }),
+  ];
+  const gmail = fakeGmail(mailbox);
+  const counter = new Counter();
+  const { changes } = await syncAccount(gmail, { leads: [{ id: 1, email: "a@biz.com", gmail_checked: 0 }] }, counter);
+  const c = changes.get(1);
+  assert.equal(c.last_email_dir, "sent");
+  assert.equal(c.last_email_at, 5000);
+  assert.equal(c.last_followed_up_at, 5000);
+  assert.equal(c.sent_streak, 3, "s1, s2 and s4; s3 bounced");
+  assert.deepEqual(gmail.calls.filter((c) => c !== "get d5").map((c) => c.split(" ")[0]), ["getProfile", "list", "thread", "drafts.list"], "one search, then the whole thread at once");
+});
+
+test("new mail moves the follow-up count: each email you send adds one, a reply resets it", async () => {
+  const lead = { id: 1, email: "a@biz.com", gmail_checked: 1, last_email_at: 1000, last_email_dir: "sent", last_followed_up_at: 1000, sent_streak: 1 };
+  const added = (...ids) => [{ messagesAdded: ids.map((id) => ({ message: { id, threadId: `t-${id}`, labelIds: [] } })) }];
+  const cursor = { history_id: "900", synced_at: 0 };
+  const s2 = msg("s2", { at: 2000, from: "me@x.com", to: "a@biz.com", sent: true });
+  const r3 = msg("r3", { at: 3000, from: "a@biz.com", to: "me@x.com" });
+  const s4 = msg("s4", { at: 4000, from: "me@x.com", to: "a@biz.com", sent: true });
+
+  let out = await syncAccount(fakeGmail([s2], { history: added("s2") }), { leads: [lead], cursor }, new Counter());
+  assert.equal(followUpsSent(out.changes.get(1)), 1);
+
+  // Their reply and your answer arrive in one sync, listed newest first.
+  out = await syncAccount(fakeGmail([s2, r3, s4], { history: added("s4", "r3", "s2") }), { leads: [lead], cursor }, new Counter());
+  assert.equal(out.changes.get(1).sent_streak, 1);
+  assert.equal(out.changes.get(1).last_email_dir, "sent");
+  assert.ok(out.replies.has(1), "the reply still counts as a new reply");
 });
 
 test("first sync backfills each lead: newest either way plus newest sent", async () => {
@@ -108,8 +208,8 @@ test("a failed Gmail call is labelled with the step and the item it was for", as
   const lead = { id: 1, email: "a@biz.com", gmail_checked: 0 };
 
   const gmail = fakeGmail(mailbox);
-  gmail.users.messages.get = gone;
-  await assert.rejects(syncAccount(gmail, { leads: [lead] }, new Counter()), (e) => e.step === "Reading Gmail message r1 (newest mail with a@biz.com)");
+  gmail.users.threads.get = gone;
+  await assert.rejects(syncAccount(gmail, { leads: [lead] }, new Counter()), (e) => e.step === "Reading Gmail thread t-r1 (mail with a@biz.com)");
 
   const drafts = fakeGmail([msg("d1", { at: 3000, from: "me@x.com", to: "a@biz.com", sent: true, labels: ["DRAFT"] })]);
   drafts.users.messages.get = gone;
@@ -149,7 +249,14 @@ test("a message deleted between Gmail naming it and the sync reading it is skipp
 
   // First lookup: the newest message vanished, so the next one is used.
   const mailbox = [msg("old", { at: 1000, from: "a@biz.com", to: "me@x.com" }), msg("newer", { at: 2000, from: "a@biz.com", to: "me@x.com" })];
-  const first = await syncAccount(without(fakeGmail(mailbox), "newer"), { leads: [{ id: 1, email: "a@biz.com", gmail_checked: 0 }] }, new Counter());
+  const gmail = fakeGmail(mailbox);
+  const list = gmail.users.messages.list;
+  gmail.users.messages.list = async (args) => {
+    const out = await list(args);
+    mailbox.pop();
+    return out;
+  };
+  const first = await syncAccount(gmail, { leads: [{ id: 1, email: "a@biz.com", gmail_checked: 0 }] }, new Counter());
   assert.equal(first.changes.get(1).last_email_at, 1000);
 });
 
@@ -252,6 +359,38 @@ test("autoStatus follows the emails but never overrides a status you set", () =>
   assert.equal(autoStatus({ last_email_dir: "received" }, "Closed - interested"), null);
   assert.equal(autoStatus({ last_email_dir: "received" }, "Confirmed"), null);
   assert.equal(autoStatus({ last_email_dir: "received" }, "My custom status"), null);
+});
+
+test("atFollowUpLimit: you sent last and the follow-ups have reached the limit", () => {
+  const sent = (streak) => ({ last_email_dir: "sent", last_email_at: 1, sent_streak: streak });
+  assert.equal(atFollowUpLimit(sent(3), 2), true, "two follow-ups sent");
+  assert.equal(atFollowUpLimit(sent(2), 2), false, "one follow-up left");
+  assert.equal(atFollowUpLimit({ ...sent(3), last_email_dir: "received" }, 2), false);
+  assert.equal(atFollowUpLimit({ ...sent(3), last_email_dir: "bounced" }, 2), false);
+  assert.equal(atFollowUpLimit(sent(9), null), false, "no limit set");
+  assert.equal(atFollowUpLimit(sent(9)), false, "no limit by default");
+  assert.equal(atFollowUpLimit(sent(1), 0), true, "0 means one email and no follow-ups");
+});
+
+test("pendingWrites closes a row as soon as its last follow-up is sent, and a reply reopens it", () => {
+  const at = Date.now();
+  const maxFollowUps = 1;
+  const lead = { id: 1, gmail_checked: 1, last_email_at: at, last_email_dir: "sent", last_followed_up_at: at, sent_streak: 2 };
+  const row = { tab: "t", rowNumber: 2, columns: { lastEmail: 0, lastEmailDir: 1, lastFollowedUp: 2, draftId: 3, followUpStatus: 4, priority: 5 },
+    lastEmail: formatDate(at), lastEmailDir: "sent", lastFollowedUp: formatDate(at), draftId: "", followUpStatus: "Awaiting Reply", priorityRaw: "3" };
+  const status = (writes) => writes.find((w) => w.key === "followUpStatus")?.value;
+
+  assert.equal(status(pendingWrites(lead, row, { maxFollowUps })), "Closed - no reply");
+  assert.deepEqual(pendingWrites(lead, row), [], "no limit, no change");
+  assert.deepEqual(pendingWrites({ ...lead, sent_streak: 1 }, row, { maxFollowUps }), [], "a follow-up is still allowed");
+  assert.equal(status(pendingWrites({ ...lead, gmail_draft_id: "d" }, row, { maxFollowUps })), "Pending action", "a waiting draft is yours to send or discard");
+  assert.deepEqual(pendingWrites(lead, { ...row, followUpStatus: "Confirmed" }, { maxFollowUps }), [], "a status you set is left alone");
+  assert.deepEqual(pendingWrites(lead, { ...row, followUpStatus: "Closed - no reply" }, { maxFollowUps }), [], "closed once, not rewritten");
+
+  // They answer: the count starts again and the row comes back.
+  const replied = { ...lead, last_email_at: at + 1, last_email_dir: "received", sent_streak: 0 };
+  const closed = { ...row, followUpStatus: "Closed - no reply" };
+  assert.equal(status(pendingWrites(replied, closed, { newReply: true, maxFollowUps })), "Pending action");
 });
 
 test("pendingWrites only writes cells whose value differs", () => {

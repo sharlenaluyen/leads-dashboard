@@ -97,6 +97,16 @@ test("changing what a load returned doesn't change the next load", () => {
   assert.deepEqual(loadStars(), []);
 });
 
+test("maxFollowUps: a whole number from 0 to 20, or blank for no limit", () => {
+  assert.equal(config.loadSettings().maxFollowUps, null);
+  assert.equal(config.saveSettings({ maxFollowUps: "2" }).maxFollowUps, 2);
+  assert.equal(config.saveSettings({ maxFollowUps: 0 }).maxFollowUps, 0);
+  assert.throws(() => config.saveSettings({ maxFollowUps: "1.5" }), /whole number from 0 to 20/);
+  assert.throws(() => config.saveSettings({ maxFollowUps: 21 }), /whole number from 0 to 20/);
+  assert.equal(config.loadSettings().maxFollowUps, 0, "a refused value changes nothing");
+  assert.equal(config.saveSettings({ maxFollowUps: "" }).maxFollowUps, null);
+});
+
 test("a settings save that fails validation leaves the cache and file alone", () => {
   const before = fs.readFileSync(file("settings.json"), "utf8");
   assert.throws(() => saveSettings({ overdueDays: 3, dueSoonDays: 5 }), /Overdue must be more days/);

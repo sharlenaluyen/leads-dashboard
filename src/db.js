@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS leads (
   last_sent_id        TEXT,                -- Gmail id of the newest message you sent
   thread_id           TEXT,                -- thread of the newest message
   gmail_draft_id      TEXT,                -- newest Gmail draft for this lead
+  sent_streak         INTEGER,             -- emails you've sent in a row since their last reply
   gmail_checked       INTEGER NOT NULL DEFAULT 0,
   UNIQUE (source_id, tab, email)
 );
@@ -113,7 +114,7 @@ CREATE TABLE IF NOT EXISTS sync_log (
 // next sync refills it from the sheets and Gmail.
 const SCHEMA_VERSION = 2;
 // Bump for one-off fixes to cached data that keep the layout (see init).
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 // Exported for tests.
 export function init(d) {
@@ -130,6 +131,10 @@ export function init(d) {
   // Bounces and out-of-office replies used to count as replies: the next
   // sync looks up every lead marked "received" again.
   if (version < 3) d.exec("UPDATE leads SET gmail_checked = 0 WHERE last_email_dir = 'received'");
+  // Follow-ups weren't counted before: the next sync looks up every lead
+  // you may have followed up with again, to count them.
+  if (!have.has("sent_streak")) d.exec("ALTER TABLE leads ADD COLUMN sent_streak INTEGER");
+  if (version < 4) d.exec("UPDATE leads SET gmail_checked = 0 WHERE last_email_dir IN ('sent', 'bounced')");
   if (version < DB_VERSION) d.exec(`PRAGMA user_version = ${DB_VERSION}`);
 }
 

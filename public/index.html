@@ -89,6 +89,7 @@
         <button id="draft-enable-saving" class="primary">Turn on Save Gmail drafts</button>
         <span class="error" id="draft-enable-error" hidden></span>
       </div>
+      <p class="banner draft-limit" id="draft-limit-note" role="status" hidden></p>
       <p class="muted" id="draft-summary"></p>
       <label class="field" id="draft-template-field">Email body
         <select id="draft-template"></select>
@@ -221,6 +222,11 @@
       <label class="setting">
         <span class="setting-text"><strong>Mark “Follow up” when</strong><span class="sub">Next action “Follow up” sorts rows near the top. Priority comes from the sheet; timing also flags rows past Overdue, whatever their priority.</span></span>
         <select data-setting="followUpBy"><option value="priority">Priority is 3</option><option value="timing">Priority is 3, or overdue by timing</option></select>
+      </label>
+
+      <label class="setting">
+        <span class="setting-text"><strong>Max follow-ups</strong><span class="sub">The most follow-ups a lead gets without replying, not counting your first email. The sync after you send the last one sets the row to “Closed - no reply”. A reply reopens it and starts the count again. Leave blank for no limit.</span></span>
+        <span class="with-unit"><input type="number" data-setting="maxFollowUps" min="0" max="20" step="1" placeholder="No limit"><span class="muted">emails</span></span>
       </label>
 
       <h3>Sync</h3>
