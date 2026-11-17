@@ -134,11 +134,15 @@ export function init(d) {
 }
 
 let db;
+// Counts each time a database is opened, so dbVersion never repeats after a
+// reset (total_changes starts again from 0 on a new connection).
+let opens = 0;
 
 export function getDb() {
   if (db) return db;
   fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
   db = new DatabaseSync(DB_PATH);
+  opens++;
   db.exec("PRAGMA journal_mode = WAL;");
   init(db);
   return db;
@@ -167,8 +171,21 @@ export function deleteDb() {
 // For tests: an in-memory database with the same schema.
 export function openMemoryDb() {
   db = new DatabaseSync(":memory:");
+  opens++;
   init(db);
   return db;
+}
+
+// Changes whenever the database's contents may have: any write on this
+// connection (total_changes, which counts rolled-back writes too, so it can
+// change without the data changing, never the other way round), a commit by
+// another connection (data_version), or a new connection. Cheap: two
+// one-row queries.
+export function dbVersion() {
+  const d = getDb();
+  const { changes } = d.prepare("SELECT total_changes() AS changes").get();
+  const { data_version } = d.prepare("PRAGMA data_version").get();
+  return `${opens}.${changes}.${data_version}`;
 }
 
 export function transaction(fn) {

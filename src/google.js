@@ -1,15 +1,17 @@
 import { google } from "googleapis";
 import {
+  ACCOUNTS_PATH,
   createAuthClient,
   createAuditLogger,
   getAccountInfo as lookupAccount,
-  getConnectedAliases,
+  getConnectedAliases as listConnectedAliases,
   withRetry,
   REQUIRED_SCOPES,
 } from "google-mcp-accounts";
 import { UserError } from "./errors.js";
+import { cachedByFile, fileSignature } from "./fileCache.js";
 
-export { getConnectedAliases, withRetry };
+export { withRetry };
 
 // The accounts package throws plain errors for setup problems (an unknown
 // account, a missing scope, no credentials file). Their messages already
@@ -22,9 +24,26 @@ function setupProblem(fn) {
   }
 }
 
+// The accounts package re-reads ~/.google-mcp/accounts.json on every
+// lookup, and lookups happen per lead during a sync. Kept in memory until
+// the file changes, so a sign-in from the dashboard or ./refresh-tokens.sh
+// is still seen on the next call.
+const accountLookups = cachedByFile(ACCOUNTS_PATH, () => new Map());
+const connectedAliases = cachedByFile(ACCOUNTS_PATH, () => listConnectedAliases());
+
 export function getAccountInfo(alias) {
-  return setupProblem(() => lookupAccount(alias));
+  const known = accountLookups.get();
+  // Unknown aliases throw and aren't remembered.
+  if (!known.has(alias)) known.set(alias, setupProblem(() => lookupAccount(alias)));
+  return { ...known.get(alias) };
 }
+
+export function getConnectedAliases() {
+  return [...connectedAliases.get()];
+}
+
+// Changes whenever accounts.json does (see /api/state's ETag).
+export const accountsVersion = () => fileSignature(ACCOUNTS_PATH);
 
 // Same shared ~/.google-mcp/audit.log the MCP servers write to.
 export const audit = createAuditLogger("leads-dashboard");
@@ -37,9 +56,9 @@ const clientCache = new Map();
 // call fails rather than being retried.
 export const REQUEST_TIMEOUT_MS = 30_000;
 
-// Cached per account *and* refresh token: accounts.json is re-read on every
-// call, so after a sign-in (the dashboard's Google sign-ins button, or
-// ./refresh-tokens.sh) the next request uses the new sign-in
+// Cached per account *and* refresh token: getAccountInfo notices when
+// accounts.json changes, so after a sign-in (the dashboard's Google sign-ins
+// button, or ./refresh-tokens.sh) the next request uses the new sign-in
 // without restarting the dashboard.
 function clientFor(product, alias, build) {
   const info = getAccountInfo(alias);

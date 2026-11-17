@@ -12,15 +12,22 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "rebuild": "node src/rebuild.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "lint": "eslint ."
   },
   "dependencies": {
     "express": "^5.1.0",
-    "google-mcp-accounts": "file:../google workspace mcp servers/google-mcp-accounts",
+    "google-mcp-accounts": "git+https://github.com/sharlenaluyen/google-mcp-accounts.git#3cf86c93f1cce99b902606d665613366d713f716",
     "googleapis": "^188.0.0",
-    "multi-gmail-mcp": "file:../google workspace mcp servers/multi-gmail-mcp"
+    "multi-gmail-mcp": "git+https://github.com/sharlenaluyen/multi-gmail-mcp.git#94de312b61a02c3c0306e397aeceb3af134ed7e3"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^17.14.0",
     "jsdom": "^26.1.0"
+  },
+  "overrides": {
+    "google-mcp-accounts": "$google-mcp-accounts"
   }
 }

@@ -36,7 +36,7 @@ export function isEmail(value) {
 export function emailsIn(cell) {
   const found = String(cell ?? "")
     .split(/[\s,;]+/)
-    .map((s) => s.replace(/^["'<(\[]+|["'>)\],.]+$/g, "").toLowerCase())
+    .map((s) => s.replace(/^["'<([]+|["'>)\],.]+$/g, "").toLowerCase())
     .filter(isEmail);
   return [...new Set(found)];
 }
