@@ -748,7 +748,7 @@ function openSignins() {
 }
 
 function renderSignins(signins) {
-  if (!signins.length) return [el("p", { class: "muted" }, "No Google accounts are connected. Run setup.sh in google-mcp-accounts to connect one.")];
+  if (!signins.length) return [el("p", { class: "muted" }, "No Google accounts are connected yet. Add one below.")];
   return signins.map((s) => {
     const note = el("div", { class: "sub" });
     const due = s.status === "expired" || s.status === "soon";
@@ -777,6 +777,52 @@ function renderSignins(signins) {
       btn
     );
   });
+}
+
+// Connects a new Google account under the typed name. The request stays open
+// while you sign in in the browser; Cancel ends it early.
+async function addSignin(event) {
+  event.preventDefault();
+  const input = $("#signin-add-alias");
+  const btn = $("#signin-add-btn");
+  const cancel = $("#signin-add-cancel");
+  const note = $("#signin-add-note");
+  const alias = input.value.trim();
+  if (!alias) {
+    note.replaceChildren(el("span", { class: "error" }, "Type a name for the account first, like work or personal."));
+    input.focus();
+    return;
+  }
+  btn.disabled = input.disabled = true;
+  btn.replaceChildren(el("span", { class: "spinner" }), " Waiting for browser");
+  cancel.hidden = false;
+  note.replaceChildren(
+    `Pick the account to call "${alias}" in the browser tab that just opened, click Continue on "Google hasn't verified this app", and leave every permission ticked. If Google says access is blocked, add the address as a test user, then click Cancel and try again.`
+  );
+  try {
+    const r = await api("POST", "/api/signins", { alias });
+    input.value = "";
+    note.replaceChildren();
+    const lines = [];
+    if (r.alreadyConnectedAs) lines.push(`${r.email} was already connected as "${r.alreadyConnectedAs}". Its sign-in was renewed and "${alias}" is now another name for it.`);
+    if (r.missing.length) lines.push(`It wasn't given ${r.missing.join(" or ")} access, which the dashboard needs. Click Sign in again for it and leave every permission ticked.`);
+    toast(r.alreadyConnectedAs ? `Signed in as ${r.email}` : `Added ${r.email} as "${r.alias}"`, {
+      detail: lines.join(" ") || "Pick it under Gmail account to check when you add or edit a section.",
+      kind: r.missing.length ? "error" : "done",
+    });
+    await Promise.all([loadSignins(), load()]);
+  } catch (err) {
+    note.replaceChildren(el("span", { class: "error" }, err.message));
+  } finally {
+    btn.disabled = input.disabled = false;
+    btn.textContent = "Add account";
+    cancel.hidden = true;
+  }
+}
+
+async function cancelAddSignin() {
+  // The waiting request then fails with "cancelled", which resets the form.
+  await api("POST", "/api/signins/cancel").catch((err) => $("#signin-add-note").replaceChildren(el("span", { class: "error" }, err.message)));
 }
 
 // --- Settings -----------------------------------------------------------------
@@ -1791,6 +1837,8 @@ $("#template-add").addEventListener("click", () => {
 $("#add-source-btn").addEventListener("click", () => openSourceDialog());
 $("#history-btn").addEventListener("click", openHistory);
 $("#signins-btn").addEventListener("click", openSignins);
+$("#signin-add").addEventListener("submit", addSignin);
+$("#signin-add-cancel").addEventListener("click", cancelAddSignin);
 $("#settings-btn").addEventListener("click", openSettings);
 for (const input of settingInputs()) input.addEventListener("change", () => saveSetting(input));
 for (const wrap of colorSettings()) {

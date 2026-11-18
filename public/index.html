@@ -147,6 +147,16 @@
     </form>
     <p class="muted">While the Google app is in Testing mode, each sign-in lasts 7 days. <strong>Sign in again</strong> opens Google in your browser: the same account is already picked (any other is refused, so a wrong click changes nothing); click <strong>Continue</strong> on "Google hasn't verified this app", and leave every permission ticked. Claude Desktop keeps using the old sign-in until you quit and reopen it.</p>
     <div id="signins-list"></div>
+    <form id="signin-add" class="signin-add">
+      <h3>Add a Google account</h3>
+      <p class="muted">Give it a short name of your own (like <strong>work</strong> or <strong>personal</strong>), then pick the account in the Google tab that opens. While the Google app is in Testing mode, the address has to be one of its test users first.</p>
+      <div class="signin-add-row">
+        <input id="signin-add-alias" aria-label="Name for the new account" placeholder="work" maxlength="40" autocomplete="off" spellcheck="false">
+        <button id="signin-add-btn" class="primary">Add account</button>
+        <button id="signin-add-cancel" type="button" hidden>Cancel</button>
+      </div>
+      <div id="signin-add-note" class="sub" role="status"></div>
+    </form>
   </dialog>
 
   <dialog id="settings-dialog">

@@ -530,6 +530,31 @@ sync to finish first, and keeps the previous version as `settings.json.bak`.
 Every setting is used from the next action on with no restart, except `port`,
 which applies the next time you start the dashboard.
 
+## Adding a Google account
+
+Click **Google sign-ins** at the top of the dashboard. Under **Add a Google
+account**, type a short name of your own for it (`work`, `personal`; letters,
+numbers, `-` and `_`) and click **Add account**. Your browser opens Google's
+sign-in: pick the account, click **Continue** on "Google hasn't verified this
+app", and leave every permission ticked. The account then shows in the list
+and under **Gmail account to check** when you add or edit a section. No
+restart needed.
+
+- While the Google OAuth app is in Testing mode, the address must be one of
+  its test users first (Google Cloud console → **Audience → Test users**).
+  Otherwise Google shows "Access blocked" and never returns to the dashboard:
+  click **Cancel**, add the address, and try again. An unfinished sign-in
+  also gives up by itself after 5 minutes.
+- A name already used by an account, or by one of its nicknames, is refused,
+  so adding can't replace an existing account's sign-in.
+- If you sign in to an account that's already connected, its sign-in is
+  renewed and the new name becomes a nickname for it.
+
+This runs google-mcp-accounts' `auth.js`, the same as `node auth.js <alias>`
+or its `setup.sh`, so the account is also available to the MCP servers. The
+OAuth client itself (`~/.google-mcp/credentials.json`) still comes from
+`setup.sh`; removing an account is `node auth.js --remove <alias>`.
+
 ## Google sign-in expiry
 
 While the Google OAuth app is in Testing mode, sign-ins expire every 7 days.

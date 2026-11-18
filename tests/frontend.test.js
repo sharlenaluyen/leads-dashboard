@@ -866,3 +866,86 @@ test("a hard reset whose sync reported problems says so", async () => {
   await page.settle();
   assert.match(page.$("#toast").textContent, /Hard reset finished with errors/);
 });
+
+// --- Google sign-ins ---------------------------------------------------------
+
+function openSignins(p) {
+  p.$("#signins-btn").click();
+  return p.settle();
+}
+function submitNewAccount(p, alias) {
+  p.$("#signin-add-alias").value = alias;
+  p.$("#signin-add").dispatchEvent(new p.window.Event("submit", { cancelable: true }));
+}
+
+test("adding a Google account from the sign-ins dialog lists it and offers it to sections", async () => {
+  const state = appState();
+  const signins = [{ alias: "work", email: "me@example.com", status: "ok", hoursLeft: 100 }];
+  page = await boot(state, {
+    "GET /api/signins": () => signins,
+    "POST /api/signins": ({ alias }) => {
+      signins.push({ alias, email: "me@home.com", status: "ok", hoursLeft: 168 });
+      state.accounts.push({ alias, email: "me@home.com" });
+      return { alias, email: "me@home.com", alreadyConnectedAs: null, missing: [] };
+    },
+  });
+  await openSignins(page);
+  submitNewAccount(page, " home ");
+  await page.settle();
+
+  assert.deepEqual(page.requests.find((r) => r.method === "POST" && r.url === "/api/signins").body, { alias: "home" });
+  assert.deepEqual(page.$$("#signins-list .signin strong").map((n) => n.textContent), ["work", "home"]);
+  assert.match(page.$("#toast").textContent, /Added me@home\.com as "home"/);
+  assert.equal(page.$("#signin-add-alias").value, "");
+  assert.equal(page.$("#signin-add-btn").disabled, false);
+  page.$("#add-source-btn").click();
+  assert.deepEqual(optionValues(page.$("#src-account")), ["work", "home"]);
+});
+
+test("while Google's tab is open the add form waits, and Cancel ends the wait", async () => {
+  let fail;
+  page = await boot(appState(), {
+    "POST /api/signins": () => new Promise((_, reject) => (fail = reject)),
+    "POST /api/signins/cancel": () => {
+      fail({ status: 400, error: 'Adding "home" was cancelled. No account was added.' });
+      return { cancelled: true };
+    },
+  });
+  await openSignins(page);
+  submitNewAccount(page, "home");
+  await page.settle();
+  assert.equal(page.$("#signin-add-btn").disabled, true);
+  assert.match(page.$("#signin-add-btn").textContent, /Waiting for browser/);
+  assert.equal(page.$("#signin-add-cancel").hidden, false);
+  assert.match(page.$("#signin-add-note").textContent, /test user/);
+
+  page.$("#signin-add-cancel").click();
+  await page.settle();
+  assert.equal(page.$("#signin-add-btn").disabled, false);
+  assert.equal(page.$("#signin-add-btn").textContent, "Add account");
+  assert.equal(page.$("#signin-add-cancel").hidden, true);
+  assert.match(page.$("#signin-add-note").textContent, /was cancelled/);
+  assert.equal(page.$("#signin-add-alias").value, "home", "kept, to try again");
+});
+
+test("adding with no name asks for one without calling the server", async () => {
+  page = await boot(appState());
+  await openSignins(page);
+  submitNewAccount(page, "   ");
+  await page.settle();
+  assert.match(page.$("#signin-add-note").textContent, /Type a name/);
+  assert.ok(!page.requests.some((r) => r.method === "POST"));
+});
+
+test("an account that was already connected, or is missing a permission, says so", async () => {
+  page = await boot(appState(), {
+    "POST /api/signins": () => ({ alias: "work", email: "me@example.com", alreadyConnectedAs: "work", missing: ["Google Sheets"] }),
+  });
+  await openSignins(page);
+  submitNewAccount(page, "office");
+  await page.settle();
+  const text = page.$("#toast").textContent;
+  assert.match(text, /already connected as "work"/);
+  assert.match(text, /"office" is now another name for it/);
+  assert.match(text, /Google Sheets access/);
+});

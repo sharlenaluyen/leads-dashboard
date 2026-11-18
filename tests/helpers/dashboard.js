@@ -97,7 +97,7 @@ export async function boot(state, routes = {}) {
     let status = 200;
     let data;
     if (method === "GET" && url === "/api/state") data = structuredClone(state);
-    else if (method === "GET" && url === "/api/signins") data = [];
+    else if (method === "GET" && url === "/api/signins" && !key) data = [];
     else if (key) {
       const [, p] = key.split(" ");
       const match = url.match(new RegExp(`^${p.replace(/:\w+/g, "([^/]+)")}$`)).slice(1);
