@@ -2,12 +2,13 @@ import { spawn } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 import { google } from "googleapis";
-import { DRIVE_READONLY_SCOPE, loadAccounts, loadCredentials } from "google-mcp-accounts";
+import { DRIVE_READONLY_SCOPE, REQUIRED_SCOPES, loadAccounts, loadCredentials, resolveAlias } from "google-mcp-accounts";
 import { UserError } from "./errors.js";
 
 // The same checks and sign-in as google-mcp-accounts' ./refresh-tokens.sh,
-// for the dashboard's "Google sign-ins" button. auth.js stays the only
-// program that writes tokens; google.js picks up its new ones on the next call.
+// and the same "connect an account" as its ./setup.sh, for the dashboard's
+// "Google sign-ins" button. auth.js stays the only program that writes
+// tokens; google.js picks up its new ones on the next call.
 
 const ACCOUNTS_DIR = path.dirname(fileURLToPath(import.meta.resolve("google-mcp-accounts")));
 const TOKEN_DAYS = 7; // how long Google keeps a Testing-mode sign-in
@@ -55,21 +56,24 @@ export async function checkSignins() {
 // browser tab without finishing) cancels the one waiting.
 let pending = null;
 
-// Opens Google sign-in for one account in the browser and resolves once it's
-// done. Keeps the account's drive.readonly access if it had it, and only
-// accepts the same Google account (auth.js --expect refuses any other).
-export async function refreshSignin(alias) {
-  const acct = loadAccounts()[alias];
-  if (!acct) throw new UserError(`No connected Google account called "${alias}"`);
-  if (pending) {
-    pending.cancelled = true;
-    pending.child.kill();
-    await pending.done;
-  }
+// Stops whichever sign-in is waiting and waits for its auth.js to exit.
+// `why` is "replaced" (another one is starting) or "stopped" (Cancel).
+async function stopPending(why) {
+  if (!pending) return false;
+  pending.cancelled = why;
+  pending.child.kill();
+  await pending.done;
+  return true;
+}
 
-  const args = ["auth.js", alias, "--expect", acct.email, ...((acct.scopes || []).includes(DRIVE_READONLY_SCOPE) ? ["--with-drive-readonly"] : [])];
-  const child = spawn(process.execPath, args, { cwd: ACCOUNTS_DIR, stdio: ["ignore", "pipe", "pipe"] });
-  const run = { child, cancelled: false, timedOut: false };
+// Runs auth.js with `args`, which opens Google sign-in in the browser, and
+// resolves once it has saved the account. `label` names the sign-in and
+// `unchanged` says what a failure left as it was, for the error messages.
+async function runAuth(args, { label, unchanged, failed }) {
+  await stopPending("replaced");
+
+  const child = spawn(process.execPath, ["auth.js", ...args], { cwd: ACCOUNTS_DIR, stdio: ["ignore", "pipe", "pipe"] });
+  const run = { child, cancelled: null, timedOut: false };
   let output = "";
   child.stdout.on("data", (d) => (output += d));
   child.stderr.on("data", (d) => (output += d));
@@ -87,13 +91,34 @@ export async function refreshSignin(alias) {
   clearTimeout(timer);
   if (pending === run) pending = null;
 
-  if (run.cancelled) throw new UserError(`Sign-in for "${alias}" was replaced by a newer one. Its old sign-in is unchanged.`);
-  if (run.timedOut) throw new UserError(`Sign-in for "${alias}" wasn't finished within 5 minutes. Its old sign-in is unchanged.`);
+  if (run.cancelled === "stopped") throw new UserError(`${label} was cancelled. ${unchanged}`);
+  if (run.cancelled) throw new UserError(`${label} was replaced by a newer one. ${unchanged}`);
+  if (run.timedOut) throw new UserError(`${label} wasn't finished within 5 minutes. ${unchanged}`);
   if (code !== 0) {
     // auth.js prints a one-line reason last (state mismatch, no refresh token, ...).
     const reason = error || output.trim().split("\n").pop() || `auth.js exited with code ${code}`;
-    throw new UserError(`"${alias}" wasn't signed in again: ${reason}`);
+    throw new UserError(`${failed}: ${reason}`);
   }
+}
+
+// For the dialog's Cancel button: gives up on the sign-in that's waiting for
+// the browser, if any. The request that started it then fails with "cancelled".
+export async function cancelSignin() {
+  return { cancelled: await stopPending("stopped") };
+}
+
+// Opens Google sign-in for one account in the browser and resolves once it's
+// done. Keeps the account's drive.readonly access if it had it, and only
+// accepts the same Google account (auth.js --expect refuses any other).
+export async function refreshSignin(alias, { run = runAuth } = {}) {
+  const acct = loadAccounts()[alias];
+  if (!acct) throw new UserError(`No connected Google account called "${alias}"`);
+
+  await run([alias, "--expect", acct.email, ...((acct.scopes || []).includes(DRIVE_READONLY_SCOPE) ? ["--with-drive-readonly"] : [])], {
+    label: `Sign-in for "${alias}"`,
+    unchanged: "Its old sign-in is unchanged.",
+    failed: `"${alias}" wasn't signed in again`,
+  });
 
   const after = loadAccounts()[alias]?.email;
   return {
@@ -101,5 +126,56 @@ export async function refreshSignin(alias) {
     email: after,
     // Only possible with an auth.js older than --expect, which ignores it.
     switchedFrom: after && after !== acct.email ? acct.email : null,
+  };
+}
+
+// auth.js's own rule, checked here so a bad name is refused before the
+// browser opens. Stricter in one way: no leading "-", which auth.js would
+// read as one of its options (--remove, --list) instead of a name.
+const ALIAS_PATTERN = /^[a-z0-9_][a-z0-9_-]*$/i;
+const MAX_ALIAS_LENGTH = 40;
+
+// What the dashboard itself calls Google for.
+const NEEDED = { Gmail: REQUIRED_SCOPES.gmail, "Google Sheets": REQUIRED_SCOPES.sheets };
+
+// Connects a Google account that isn't connected yet, under a new alias:
+// opens Google sign-in in the browser and resolves once auth.js has saved it.
+// A name already in use is refused up front, because auth.js would give that
+// alias's sign-in to whichever account signs in.
+export async function addSignin(name, { run = runAuth } = {}) {
+  const alias = String(name ?? "").trim();
+  if (!alias) throw new UserError("Type a name for the account, like work or personal");
+  if (!ALIAS_PATTERN.test(alias) || alias.length > MAX_ALIAS_LENGTH) {
+    throw new UserError(`An account name can only have letters, numbers, - and _ (up to ${MAX_ALIAS_LENGTH} characters), and can't start with -`);
+  }
+  const before = loadAccounts();
+  const taken = resolveAlias(before, alias);
+  if (taken) {
+    throw new UserError(`"${alias}" is already ${taken === alias ? "the name" : `a nickname`} of ${before[taken].email}. Pick another name, or use Sign in again for that account.`);
+  }
+  try {
+    loadCredentials();
+  } catch (err) {
+    throw new UserError(err.message, { cause: err });
+  }
+
+  await run([alias], {
+    label: `Adding "${alias}"`,
+    unchanged: "No account was added.",
+    failed: `"${alias}" wasn't added`,
+  });
+
+  const accounts = loadAccounts();
+  const owner = resolveAlias(accounts, alias);
+  if (!owner) throw new UserError(`"${alias}" wasn't added: the sign-in finished but no account was saved. Try again.`);
+  const granted = accounts[owner].scopes || [];
+  return {
+    alias: owner,
+    email: accounts[owner].email,
+    // The Google account was connected already, so auth.js renewed that
+    // sign-in and kept the new name as a nickname for it.
+    alreadyConnectedAs: owner === alias ? null : owner,
+    // Permissions unticked on Google's consent screen that the dashboard needs.
+    missing: Object.keys(NEEDED).filter((product) => !NEEDED[product].every((s) => granted.includes(s))),
   };
 }

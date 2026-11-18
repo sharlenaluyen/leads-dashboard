@@ -679,6 +679,13 @@ button.alert { border-color: var(--danger); color: var(--danger); font-weight: 6
 .signin-who { flex: 1; min-width: 0; }
 .signin-who .sub { font-size: 12px; overflow-wrap: anywhere; }
 .signin .error { font-size: 13px; }
+.signin-add { border-top: 1px solid var(--border); padding-top: 14px; }
+.signin-add h3 { font-size: 14px; margin: 0 0 4px; }
+.signin-add p { margin: 0 0 10px; font-size: 13px; }
+.signin-add-row { display: flex; gap: 8px; align-items: center; }
+.signin-add-row input { flex: 1; min-width: 0; }
+.signin-add .sub { font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; }
+.signin-add .error { font-size: 13px; }
 
 .settings h3 {
   font-size: 18px;

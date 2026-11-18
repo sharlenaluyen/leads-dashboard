@@ -12,7 +12,7 @@ import { setLeadField } from "./edits.js";
 import { generateDrafts, saveDraft } from "./drafts.js";
 import { readChanges, undoChange } from "./changes.js";
 import { addContact, dismissContact, listNewContacts } from "./contacts.js";
-import { checkSignins, refreshSignin } from "./signins.js";
+import { addSignin, cancelSignin, checkSignins, refreshSignin } from "./signins.js";
 import { securityHeaders } from "./securityHeaders.js";
 import { UserError } from "./errors.js";
 
@@ -339,6 +339,13 @@ app.get("/api/signins", wrap(() => checkSignins()));
 
 // Waits while you sign in in the browser (up to 5 minutes).
 app.post("/api/signins/:alias/refresh", wrap((req) => refreshSignin(req.params.alias)));
+
+// Connects a new Google account under the name in `alias`; also waits for
+// the browser.
+app.post("/api/signins", wrap((req) => addSignin(req.body.alias)));
+
+// Gives up on the sign-in that's waiting for the browser.
+app.post("/api/signins/cancel", wrap(() => cancelSignin()));
 
 // --- Drafts -------------------------------------------------------------
 
