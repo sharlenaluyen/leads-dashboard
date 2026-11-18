@@ -509,7 +509,7 @@ function renderStarred(f) {
     { class: "source-head", title: "Click to open or close" },
     el("button", { class: "collapse icon", "aria-label": "Open or close Starred" }, "▾"),
     el("h2", { class: "source-name" }, "★ Starred"),
-    el("span", { class: "source-meta muted" }, `${entries.length} row${entries.length === 1 ? "" : "s"} · kept in the dashboard, not the spreadsheet`),
+    el("span", { class: "source-meta muted" }, `${entries.length} row${entries.length === 1 ? "" : "s"}`),
     el("span", { class: "spacer" }),
     counts
   );
